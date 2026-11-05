@@ -3,6 +3,7 @@ package com.anasikus.lifeassistant.ui.components
 import android.app.DatePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +16,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anasikus.lifeassistant.data.CalendarEventEntity
+import com.anasikus.lifeassistant.data.EventCategoryEntity
+import com.anasikus.lifeassistant.domain.CalendarDisplay
+import com.anasikus.lifeassistant.domain.ShiftRules
 import com.anasikus.lifeassistant.domain.CalendarDateUtils
 import com.anasikus.lifeassistant.ui.AppColors
 import java.text.SimpleDateFormat
@@ -49,10 +56,14 @@ fun CalendarEventDialog(
         date: String,
         startMinute: Int,
         durationMinutes: Int,
-        repeatDaysMask: Int
+        repeatDaysMask: Int,
+        categoryId: Int?,
+        amountCents: Long?
     ) -> Unit,
     onDeleteOccurrence: (() -> Unit)? = null,
-    onDeleteAll: (() -> Unit)? = null
+    onDeleteAll: (() -> Unit)? = null,
+    categories: List<EventCategoryEntity> = emptyList(),
+    defaultHourlyRateCents: Long = 0
 ) {
     val context = LocalContext.current
 
@@ -68,6 +79,12 @@ fun CalendarEventDialog(
     var timeError by remember(event?.id, initialDate) { mutableStateOf<String?>(null) }
     var repeatDaysMask by remember(event?.id) {
         mutableStateOf(event?.repeatDaysMask ?: 0)
+    }
+    var categoryId by remember(event?.id) { mutableStateOf(event?.categoryId) }
+    var categoryMenu by remember { mutableStateOf(false) }
+    val selectedCategory = categories.find { it.id == categoryId }
+    var amount by remember(event?.id, selectedCategory?.kind) {
+        mutableStateOf(java.math.BigDecimal.valueOf(if (selectedCategory?.kind == "WORK") defaultHourlyRateCents else event?.oneTimePaymentCents ?: 0, 2).toPlainString())
     }
     var titleError by remember(event?.id) { mutableStateOf(false) }
     var showDeleteOptions by remember(event?.id) { mutableStateOf(false) }
@@ -126,6 +143,30 @@ fun CalendarEventDialog(
                     colors = fieldColors
                 )
 
+                Box {
+                    OutlinedButton(onClick = { categoryMenu = true }) { Text("Категория: ${selectedCategory?.name ?: "Без категории"}", color = AppColors.MainText) }
+                    DropdownMenu(expanded = categoryMenu, onDismissRequest = { categoryMenu = false }) {
+                        DropdownMenuItem(text = { Text("Без категории") }, onClick = { categoryId = null; categoryMenu = false })
+                        categories.forEach { category ->
+                            DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; categoryMenu = false })
+                        }
+                    }
+                }
+                if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) {
+                    OutlinedTextField(value = amount, onValueChange = { amount = it }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text(if (selectedCategory?.kind == "WORK") "Почасовая ставка, ₽" else "Разовая выплата, ₽") }, colors = fieldColors, singleLine = true)
+                }
+                if (selectedCategory?.kind == "WORK") {
+                    Text("Сохранение перенесёт выбранный день в график смен, без карточки мероприятия. Для повторяющегося графика используй «Категории и график → Смены».", color = AppColors.Yellow, fontSize = 12.sp)
+                }
+
+                if (selectedCategory?.kind == "HOLIDAY") {
+                    Text("Ежегодные дни рождения и годовщины добавляй в «Категории и график → Праздники». Здесь создаётся мероприятие со временем.", color = AppColors.SecondaryText, fontSize = 11.sp)
+                }
+                if (selectedCategory?.kind == "SIDE_JOB" && repeatDaysMask != 0) {
+                    Text("Выплата планируется за каждое повторение подработки.", color = AppColors.SecondaryText, fontSize = 11.sp)
+                }
+
                 TextButton(
                     onClick = {
                         val calendar = CalendarDateUtils.parseCalendar(date)
@@ -163,16 +204,18 @@ fun CalendarEventDialog(
                 TimePickerField(
                     label = "Окончание (до)",
                     minute = startMinute + durationMinutes,
-                    endOfDayAtMidnight = true,
                     onTimeSelected = { end ->
-                        if (end - startMinute >= 15) {
-                            durationMinutes = end - startMinute
+                        val selectedDuration = CalendarDisplay.endToDuration(startMinute, end)
+                        if (selectedDuration >= 15) {
+                            durationMinutes = selectedDuration
                             timeError = null
                         } else {
                             timeError = "Окончание должно быть хотя бы на 15 минут позже начала."
                         }
                     }
                 )
+                Text(CalendarDisplay.interval(startMinute, durationMinutes), color = AppColors.MainText)
+                Text("Если окончание раньше начала, оно относится к следующему дню. Одинаковое время означает 24 часа.", color = AppColors.SecondaryText, fontSize = 11.sp)
                 timeError?.let { Text(it, color = AppColors.Red, fontSize = 12.sp) }
                 if (event != null && event.repeatDaysMask != 0) {
                     Text(
@@ -205,7 +248,7 @@ fun CalendarEventDialog(
                         )
                         TextButton(
                             onClick = {
-                                durationMinutes = (durationMinutes + 15).coerceAtMost((1440 - startMinute).coerceAtLeast(15))
+                                durationMinutes = (durationMinutes + 15).coerceAtMost(1440)
                                 timeError = null
                             }
                         ) { Text("+", color = AppColors.Accent) }
@@ -264,8 +307,10 @@ fun CalendarEventDialog(
                 onClick = {
                     if (title.isBlank()) {
                         titleError = true
-                    } else if (durationMinutes < 15 || startMinute + durationMinutes > 1440) {
-                        timeError = "Выбери длительность от 15 минут и окончание не позднее 24:00."
+                    } else if (durationMinutes !in 15..1440) {
+                        timeError = "Выбери длительность от 15 минут до 24 часов."
+                    } else if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB") && ShiftRules.cents(amount) == null) {
+                        timeError = "Введи неотрицательную сумму с точностью до копеек."
                     } else {
                         onSave(
                             title.trim(),
@@ -273,7 +318,9 @@ fun CalendarEventDialog(
                             date,
                             startMinute,
                             durationMinutes,
-                            repeatDaysMask
+                            repeatDaysMask,
+                            categoryId,
+                            if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) ShiftRules.cents(amount) else null
                         )
                     }
                 }

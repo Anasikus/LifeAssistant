@@ -52,6 +52,13 @@ import com.anasikus.lifeassistant.data.CalendarEventEntity
 import com.anasikus.lifeassistant.data.CalendarEventOverrideEntity
 import com.anasikus.lifeassistant.data.CalendarTaskPlacementEntity
 import com.anasikus.lifeassistant.data.TaskEntity
+import com.anasikus.lifeassistant.data.ShiftDayEntity
+import com.anasikus.lifeassistant.data.SpecialDateEntity
+import com.anasikus.lifeassistant.data.EventCategoryEntity
+import com.anasikus.lifeassistant.domain.ShiftRules
+import com.anasikus.lifeassistant.domain.CalendarDisplay
+import com.anasikus.lifeassistant.ui.components.CalendarPlanningDialog
+import com.anasikus.lifeassistant.ui.components.shiftStatus
 import com.anasikus.lifeassistant.domain.CalendarDateUtils
 import com.anasikus.lifeassistant.domain.CalendarEventOccurrence
 import com.anasikus.lifeassistant.domain.CalendarEventRules
@@ -83,6 +90,11 @@ fun CalendarScreen(
     val eventOverrides by viewModel.eventOverrides.collectAsState()
     val placements by viewModel.placements.collectAsState()
     val tasks by taskViewModel.tasks.collectAsState()
+    val categories by viewModel.categories.collectAsState()
+    val shiftPattern by viewModel.shiftPattern.collectAsState()
+    val shiftDays by viewModel.shiftDays.collectAsState()
+    val specialDates by viewModel.specialDates.collectAsState()
+    var showPlanningDialog by remember { mutableStateOf(false) }
 
     var anchorDate by remember { mutableStateOf(CalendarDateUtils.today()) }
     var mode by remember { mutableStateOf(CalendarViewMode.WEEK) }
@@ -128,10 +140,22 @@ fun CalendarScreen(
         )
     }
 
-    val scheduledTasks = remember(tasks, occurrences, placements, rangeStart, rangeEnd) {
+    val effectiveShifts = remember(shiftPattern, shiftDays, rangeStart, rangeEnd, mode) {
+        val grid = if (mode == CalendarViewMode.MONTH) CalendarDateUtils.monthGridDates(anchorDate) else emptyList()
+        ShiftRules.days(CalendarDateUtils.addDays(grid.firstOrNull() ?: rangeStart, -1), grid.lastOrNull() ?: rangeEnd, shiftPattern, shiftDays)
+    }
+    val shiftBlocks = remember(effectiveShifts, rangeStart, rangeEnd) {
+        CalendarEventRules.expand(
+            effectiveShifts.filter { it.status == "WORK" && !it.predicted }.mapIndexed { index, day ->
+                CalendarEventEntity(id = -index - 1, title = "Смена", startDate = day.date, startMinute = day.startMinute, durationMinutes = day.durationMinutes)
+            }, rangeStart, rangeEnd
+        )
+    }
+
+    val scheduledTasks = remember(tasks, occurrences, shiftBlocks, placements, rangeStart, rangeEnd) {
         CalendarTaskScheduler.schedule(
             tasks = tasks,
-            events = occurrences,
+            events = occurrences + shiftBlocks,
             rangeStart = rangeStart,
             rangeEnd = rangeEnd,
             placements = placements
@@ -158,10 +182,10 @@ fun CalendarScreen(
 
     fun openExistingEvent(occurrence: CalendarEventOccurrence) {
         editingEvent = occurrence.event
-        eventInitialDate = occurrence.date
+        eventInitialDate = occurrence.instanceDate
         eventOccurrenceDate = occurrence.occurrenceDate
-        eventInitialMinute = occurrence.startMinute
-        eventInitialDuration = occurrence.durationMinutes
+        eventInitialMinute = occurrence.instanceStartMinute
+        eventInitialDuration = occurrence.instanceDurationMinutes
         showEventDialog = true
     }
 
@@ -189,13 +213,14 @@ fun CalendarScreen(
         startMinute: Int = occurrence.startMinute,
         durationMinutes: Int = occurrence.durationMinutes
     ) {
+        val changed = occurrence.withSegmentRange(TimelineRange(startMinute, durationMinutes))
         viewModel.saveEventOverride(
             CalendarEventOverrideEntity(
                 eventId = occurrence.event.id,
                 occurrenceDate = occurrence.occurrenceDate,
-                date = occurrence.date,
-                startMinute = startMinute.coerceIn(0, 24 * 60 - 15),
-                durationMinutes = durationMinutes.coerceIn(15, 24 * 60),
+                date = changed.instanceDate,
+                startMinute = changed.instanceStartMinute,
+                durationMinutes = changed.instanceDurationMinutes,
                 deleted = false
             )
         )
@@ -290,6 +315,24 @@ fun CalendarScreen(
                 }
             }
 
+            TextButton(onClick = { showPlanningDialog = true }) { Text("Категории и график смен", color = AppColors.Accent) }
+            effectiveShifts.find { it.date == anchorDate }?.let { day ->
+                Text(
+                    "${shiftStatus(day.status)}${if (day.predicted) " · предположение ?" else ""}" +
+                        if (day.status == "WORK") " · ${CalendarDisplay.interval(day.startMinute, day.durationMinutes)}" else "",
+                    color = shiftColor(day.status), fontSize = 12.sp
+                )
+            }
+            if (mode == CalendarViewMode.DAY) {
+                val holidays = ShiftRules.specialDatesFor(anchorDate, specialDates)
+                if (holidays.isNotEmpty()) Text("★ " + holidays.joinToString(" · ") { it.title }, color = AppColors.Yellow, fontSize = 12.sp, maxLines = 2)
+            }
+            if (mode == CalendarViewMode.MONTH) {
+                val shiftIncome = effectiveShifts.filter { it.date in rangeStart..rangeEnd && !it.predicted }.sumOf { ShiftRules.payment(it) }
+                val sideIncome = occurrences.filter { it.instanceDate in rangeStart..rangeEnd }.distinctBy { it.event.id to it.occurrenceDate }.sumOf { it.event.oneTimePaymentCents ?: 0L }
+                Text("Плановый доход без предположений: ${ShiftRules.money(shiftIncome + sideIncome)}", color = AppColors.SecondaryText, fontSize = 12.sp)
+            }
+
             OutlinedButton(
                 onClick = { openNewEvent(anchorDate, 9 * 60) },
                 modifier = Modifier.fillMaxWidth()
@@ -320,6 +363,8 @@ fun CalendarScreen(
                     WeekTasksContent(
                         dates = dates,
                         tasks = scheduledTasks,
+                        shifts = effectiveShifts,
+                        specialDates = specialDates,
                         onTaskClick = { taskForActions = it },
                         modifier = Modifier.weight(1f)
                     )
@@ -328,6 +373,9 @@ fun CalendarScreen(
                     MonthEventsContent(
                         anchorDate = anchorDate,
                         occurrences = occurrences,
+                        shifts = effectiveShifts,
+                        specialDates = specialDates,
+                        categories = categories,
                         onDateSelected = { anchorDate = it },
                         onEventClick = ::openExistingEvent,
                         onAddEvent = ::openNewEvent,
@@ -350,6 +398,10 @@ fun CalendarScreen(
         }
     }
 
+    if (showPlanningDialog) {
+        CalendarPlanningDialog(viewModel, anchorDate) { showPlanningDialog = false }
+    }
+
     if (showEventDialog) {
         val currentEvent = editingEvent
         CalendarEventDialog(
@@ -357,9 +409,17 @@ fun CalendarScreen(
             initialDate = eventInitialDate,
             initialStartMinute = eventInitialMinute,
             initialDurationMinutes = eventInitialDuration,
+            categories = categories,
+            defaultHourlyRateCents = shiftPattern?.hourlyRateCents ?: 0,
             onDismiss = { showEventDialog = false },
-            onSave = { title, description, date, startMinute, durationMinutes, repeatDaysMask ->
-                if (currentEvent == null) {
+            onSave = { title, description, date, startMinute, durationMinutes, repeatDaysMask, categoryId, amountCents ->
+                val kind = categories.find { it.id == categoryId }?.kind
+                if (kind == "WORK") {
+                    viewModel.moveEventToShift(
+                        ShiftDayEntity(date, "WORK", startMinute, durationMinutes, amountCents ?: 0),
+                        currentEvent, eventOccurrenceDate
+                    )
+                } else if (currentEvent == null) {
                     viewModel.addEvent(
                         CalendarEventEntity(
                             title = title,
@@ -367,7 +427,9 @@ fun CalendarScreen(
                             startDate = date,
                             startMinute = startMinute,
                             durationMinutes = durationMinutes,
-                            repeatDaysMask = repeatDaysMask
+                            repeatDaysMask = repeatDaysMask,
+                            categoryId = categoryId,
+                            oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else null
                         )
                     )
                 } else {
@@ -377,7 +439,9 @@ fun CalendarScreen(
                         event = currentEvent.copy(
                             title = title,
                             description = description,
-                            repeatDaysMask = repeatDaysMask
+                            repeatDaysMask = repeatDaysMask,
+                            categoryId = categoryId,
+                            oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else null
                         ),
                         occurrence = CalendarEventOverrideEntity(
                             eventId = currentEvent.id,
@@ -694,7 +758,7 @@ private fun ScheduleTimeline(
         buildList {
             occurrences.forEach { occurrence ->
                 add(TimelineBlock(
-                    id = "event_${occurrence.event.id}_${occurrence.occurrenceDate}",
+                    id = "event_${occurrence.event.id}_${occurrence.occurrenceDate}_${occurrence.date}",
                     startMinute = occurrence.startMinute,
                     durationMinutes = occurrence.durationMinutes,
                     event = occurrence
@@ -780,7 +844,7 @@ private fun ScheduleTimeline(
                                 ?: AppColors.Card,
                             onClick = { displayedRange ->
                                 block.event?.let {
-                                    onEventClick(it.copy(startMinute = displayedRange.startMinute, durationMinutes = displayedRange.durationMinutes))
+                                    onEventClick(it.withSegmentRange(displayedRange))
                                 }
                                 block.task?.let {
                                     onTaskClick(it.copy(startMinute = displayedRange.startMinute, durationMinutes = displayedRange.durationMinutes))
@@ -802,6 +866,8 @@ private fun ScheduleTimeline(
 private fun WeekTasksContent(
     dates: List<String>,
     tasks: List<ScheduledTask>,
+    shifts: List<ShiftDayEntity>,
+    specialDates: List<SpecialDateEntity>,
     onTaskClick: (ScheduledTask) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -812,9 +878,10 @@ private fun WeekTasksContent(
         Text("Задачи на неделю", color = AppColors.SecondaryText, fontSize = 13.sp)
         dates.forEach { date ->
             val dayTasks = tasks.filter { it.date == date }.sortedBy { it.startMinute }
+            val shift = shifts.find { it.date == date }
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = AppColors.Card)
+                colors = CardDefaults.cardColors(containerColor = shift?.let { shiftColor(it.status).copy(alpha = 0.18f) } ?: AppColors.Card)
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
@@ -825,6 +892,8 @@ private fun WeekTasksContent(
                         color = AppColors.MainText,
                         fontWeight = FontWeight.Bold
                     )
+                    shift?.let { Text(shiftStatus(it.status) + if (it.predicted) " · предположение ?" else "", color = shiftColor(it.status), fontSize = 12.sp) }
+                    ShiftRules.specialDatesFor(date, specialDates).forEach { Text("★ ${it.title}", color = AppColors.Yellow, fontSize = 12.sp) }
                     if (dayTasks.isEmpty()) {
                         Text("Нет запланированных задач", color = AppColors.SecondaryText, fontSize = 12.sp)
                     } else {
@@ -863,6 +932,9 @@ private fun WeekTasksContent(
 private fun MonthEventsContent(
     anchorDate: String,
     occurrences: List<CalendarEventOccurrence>,
+    shifts: List<ShiftDayEntity>,
+    specialDates: List<SpecialDateEntity>,
+    categories: List<EventCategoryEntity>,
     onDateSelected: (String) -> Unit,
     onEventClick: (CalendarEventOccurrence) -> Unit,
     onAddEvent: (String, Int) -> Unit,
@@ -889,12 +961,15 @@ private fun MonthEventsContent(
         ) {
             items(gridDates, key = { it }) { date ->
                 val dayEvents = occurrences.count { it.date == date }
+                val dayShift = shifts.find { it.date == date }
+                val daySpecials = ShiftRules.specialDatesFor(date, specialDates)
                 val isSelected = date == anchorDate
                 val isInMonth = date.take(7) == anchorDate.take(7)
                 Card(
                     modifier = Modifier.fillMaxWidth().height(48.dp).clickable { onDateSelected(date) },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) AppColors.Accent.copy(alpha = 0.28f) else AppColors.Card
+                        containerColor = dayShift?.let { shiftColor(it.status).copy(alpha = if (isSelected) 0.65f else if (it.predicted) 0.12f else 0.28f) }
+                            ?: if (isSelected) AppColors.Accent.copy(alpha = 0.28f) else AppColors.Card
                     )
                 ) {
                     Column(
@@ -907,20 +982,22 @@ private fun MonthEventsContent(
                             color = if (isInMonth) AppColors.MainText else AppColors.SecondaryText.copy(alpha = 0.5f),
                             fontSize = 12.sp
                         )
-                        if (dayEvents > 0) {
-                            Text("• $dayEvents", color = AppColors.Accent, fontSize = 9.sp)
+                        if (dayEvents > 0 || daySpecials.isNotEmpty() || dayShift?.predicted == true) {
+                            Text("${if (dayEvents > 0) "• $dayEvents" else ""}${if (daySpecials.isNotEmpty()) " ★" else ""}${if (dayShift?.predicted == true) " ?" else ""}", color = AppColors.MainText, fontSize = 9.sp)
                         }
                     }
                 }
             }
         }
 
+        Text("Голубой — работа · красный — выходной · жёлтый — больничный · фиолетовый — отпуск · ? — предположение", color = AppColors.SecondaryText, fontSize = 11.sp)
+        ShiftRules.specialDatesFor(anchorDate, specialDates).forEach { Text("★ ${it.title}", color = AppColors.Yellow) }
         Text(CalendarDateUtils.formatLongDate(anchorDate), color = AppColors.MainText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         if (selectedEvents.isEmpty()) {
             Text("На этот день мероприятий нет.", color = AppColors.SecondaryText, fontSize = 13.sp)
         } else {
             selectedEvents.forEach { occurrence ->
-                EventListCard(occurrence = occurrence, onClick = { onEventClick(occurrence) })
+                EventListCard(occurrence = occurrence, categoryName = categories.find { it.id == occurrence.event.categoryId }?.name, onClick = { onEventClick(occurrence) })
             }
         }
         TextButton(onClick = { onAddEvent(anchorDate, 9 * 60) }) {
@@ -979,6 +1056,7 @@ private fun YearEventsContent(
 @Composable
 private fun EventListCard(
     occurrence: CalendarEventOccurrence,
+    categoryName: String?,
     onClick: () -> Unit
 ) {
     Card(
@@ -988,14 +1066,13 @@ private fun EventListCard(
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(occurrence.event.title, color = AppColors.MainText, fontWeight = FontWeight.SemiBold)
             Text(
-                text = "%02d:%02d · %d мин.".format(
-                    occurrence.startMinute / 60,
-                    occurrence.startMinute % 60,
-                    occurrence.durationMinutes
-                ),
+                text = CalendarDisplay.interval(occurrence.instanceStartMinute, occurrence.instanceDurationMinutes) +
+                    if (occurrence.date != occurrence.instanceDate) " · продолжение с ${CalendarDateUtils.formatDate(occurrence.instanceDate)}" else "",
                 color = AppColors.SecondaryText,
                 fontSize = 12.sp
             )
+            categoryName?.let { Text(it, color = AppColors.Accent, fontSize = 12.sp) }
+            occurrence.event.oneTimePaymentCents?.let { Text("Разовая выплата: ${ShiftRules.money(it)}", color = AppColors.Green, fontSize = 12.sp) }
             if (occurrence.event.description.isNotBlank()) {
                 Text(occurrence.event.description, color = AppColors.SecondaryText, fontSize = 12.sp)
             }
@@ -1011,3 +1088,11 @@ private fun taskPriorityColor(priority: Int): Color = when (priority) {
     else -> AppColors.Green
 }
 
+
+private fun shiftColor(status: String): Color = when (status) {
+    "WORK" -> Color(0xFF7DD3FC)
+    "OFF" -> AppColors.Red
+    "SICK" -> AppColors.Yellow
+    "VACATION" -> AppColors.Accent
+    else -> AppColors.SecondaryText
+}

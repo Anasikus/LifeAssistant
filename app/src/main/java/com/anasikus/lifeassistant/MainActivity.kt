@@ -44,7 +44,8 @@ class MainActivity : ComponentActivity() {
         val calendarRepository = CalendarRepository(
             eventDao = database.calendarEventDao(),
             placementDao = database.calendarTaskPlacementDao(),
-            overrideDao = database.calendarEventOverrideDao()
+            overrideDao = database.calendarEventOverrideDao(),
+            planning = database.calendarPlanningDao()
         )
 
         val calendarFactory =

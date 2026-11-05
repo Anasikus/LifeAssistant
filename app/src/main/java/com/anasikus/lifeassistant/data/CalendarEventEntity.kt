@@ -26,5 +26,8 @@ data class CalendarEventEntity(
     // Маска дней недели: понедельник — бит 0,
     // вторник — бит 1, ..., воскресенье — бит 6.
     // 0 означает однократное мероприятие.
-    val repeatDaysMask: Int = 0
+    val repeatDaysMask: Int = 0,
+    val categoryId: Int? = null,
+    /** Плановая разовая выплата, в копейках; не банковская операция. */
+    val oneTimePaymentCents: Long? = null
 )

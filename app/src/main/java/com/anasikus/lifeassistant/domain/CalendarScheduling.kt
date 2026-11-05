@@ -15,8 +15,24 @@ data class CalendarEventOccurrence(
     /** Дата исходного повторения. Нужна для исключений повторяющейся серии. */
     val occurrenceDate: String = date,
     val startMinute: Int = event.startMinute,
-    val durationMinutes: Int = event.durationMinutes
-)
+    val durationMinutes: Int = event.durationMinutes,
+    /** Полное событие; date/start/duration выше описывают видимую часть дня. */
+    val instanceDate: String = date,
+    val instanceStartMinute: Int = startMinute,
+    val instanceDurationMinutes: Int = durationMinutes
+) {
+    fun withSegmentRange(range: TimelineRange): CalendarEventOccurrence {
+        val totalStart = instanceStartMinute + range.startMinute - startMinute
+        val dayOffset = Math.floorDiv(totalStart, 1440)
+        return copy(
+            startMinute = range.startMinute,
+            durationMinutes = range.durationMinutes,
+            instanceDate = CalendarDateUtils.addDays(instanceDate, dayOffset),
+            instanceStartMinute = Math.floorMod(totalStart, 1440),
+            instanceDurationMinutes = (instanceDurationMinutes + range.durationMinutes - durationMinutes).coerceIn(15, 1440)
+        )
+    }
+}
 
 /** Задача, размещённая планировщиком в определённом временном слоте. */
 data class ScheduledTask(
@@ -53,7 +69,7 @@ object CalendarEventRules {
             if (event.repeatDaysMask == 0) {
                 candidateSourceDates.add(event.startDate)
             } else {
-                val firstDate = maxOf(event.startDate, rangeStart)
+                val firstDate = maxOf(event.startDate, CalendarDateUtils.addDays(rangeStart, -1))
                 if (firstDate <= rangeEnd) {
                     CalendarDateUtils.datesBetween(firstDate, rangeEnd).forEach { date ->
                         val dayBit = 1 shl CalendarDateUtils.weekdayIndex(date)
@@ -66,7 +82,7 @@ object CalendarEventRules {
 
             // Добавляем исключения, перенесённые в диапазон из исходных дат за его пределами.
             eventOverrides.values
-                .filter { it.date >= rangeStart && it.date <= rangeEnd }
+                .filter { it.date >= CalendarDateUtils.addDays(rangeStart, -1) && it.date <= rangeEnd }
                 .forEach { candidateSourceDates.add(it.occurrenceDate) }
 
             candidateSourceDates.forEach sourceDateLoop@ { sourceDate ->
@@ -74,24 +90,32 @@ object CalendarEventRules {
                 if (override?.deleted == true) return@sourceDateLoop
 
                 val actualDate = override?.date ?: sourceDate
-                if (actualDate < rangeStart || actualDate > rangeEnd) {
-                    return@sourceDateLoop
+                val start = override?.startMinute ?: event.startMinute
+                val duration = override?.durationMinutes ?: event.durationMinutes
+                var remaining = duration.coerceIn(15, 1440)
+                var segmentDate = actualDate
+                var segmentStart = start.coerceIn(0, 1439)
+                while (remaining > 0) {
+                    val segmentDuration = minOf(remaining, 1440 - segmentStart)
+                    if (segmentDate in rangeStart..rangeEnd) {
+                        result.add(
+                            CalendarEventOccurrence(
+                                event = event, date = segmentDate, occurrenceDate = sourceDate,
+                                startMinute = segmentStart, durationMinutes = segmentDuration,
+                                instanceDate = actualDate, instanceStartMinute = start,
+                                instanceDurationMinutes = duration
+                            )
+                        )
+                    }
+                    remaining -= segmentDuration
+                    segmentDate = CalendarDateUtils.addDays(segmentDate, 1)
+                    segmentStart = 0
                 }
-
-                result.add(
-                    CalendarEventOccurrence(
-                        event = event,
-                        date = actualDate,
-                        occurrenceDate = sourceDate,
-                        startMinute = override?.startMinute ?: event.startMinute,
-                        durationMinutes = override?.durationMinutes ?: event.durationMinutes
-                    )
-                )
             }
         }
 
         return result
-            .distinctBy { "${it.event.id}_${it.occurrenceDate}" }
+            .distinctBy { "${it.event.id}_${it.occurrenceDate}_${it.date}" }
             .sortedWith(
                 compareBy<CalendarEventOccurrence> { it.date }
                     .thenBy { it.startMinute }

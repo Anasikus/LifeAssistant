@@ -26,7 +26,7 @@ fun TimePickerField(
     OutlinedButton(
         modifier = modifier.fillMaxWidth(),
         onClick = {
-            val clockMinute = minute.coerceIn(0, 1440) % 1440
+            val clockMinute = Math.floorMod(minute, 1440)
             TimePickerDialog(
                 context,
                 { _, hour, selectedMinute ->
@@ -41,7 +41,7 @@ fun TimePickerField(
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text(label, color = AppColors.SecondaryText, fontSize = 12.sp)
-            Text("%02d:%02d".format(minute / 60, minute % 60), color = AppColors.MainText, fontSize = 18.sp)
+            Text("%02d:%02d".format(Math.floorMod(minute, 1440) / 60, Math.floorMod(minute, 1440) % 60) + if (minute >= 1440) " (+1 день)" else "", color = AppColors.MainText, fontSize = 18.sp)
         }
     }
 }

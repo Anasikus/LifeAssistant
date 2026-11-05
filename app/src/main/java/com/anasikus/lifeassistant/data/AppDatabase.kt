@@ -13,9 +13,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TaskEntity::class,
         CalendarEventEntity::class,
         CalendarTaskPlacementEntity::class,
-        CalendarEventOverrideEntity::class
+        CalendarEventOverrideEntity::class,
+        EventCategoryEntity::class,
+        ShiftPatternEntity::class,
+        ShiftDayEntity::class,
+        SpecialDateEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +28,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun calendarEventDao(): CalendarEventDao
     abstract fun calendarTaskPlacementDao(): CalendarTaskPlacementDao
     abstract fun calendarEventOverrideDao(): CalendarEventOverrideDao
+
+    abstract fun calendarPlanningDao(): CalendarPlanningDao
 
     companion object {
 
@@ -112,6 +118,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN categoryId INTEGER")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN oneTimePaymentCents INTEGER")
+                database.execSQL("CREATE TABLE IF NOT EXISTS event_categories (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS shift_patterns (id INTEGER NOT NULL PRIMARY KEY, enabled INTEGER NOT NULL, mode TEXT NOT NULL, anchorDate TEXT NOT NULL, workDays INTEGER NOT NULL, offDays INTEGER NOT NULL, startMinute INTEGER NOT NULL, durationMinutes INTEGER NOT NULL, hourlyRateCents INTEGER NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS shift_days (date TEXT NOT NULL PRIMARY KEY, status TEXT NOT NULL, startMinute INTEGER NOT NULL, durationMinutes INTEGER NOT NULL, hourlyRateCents INTEGER NOT NULL, predicted INTEGER NOT NULL, confidence INTEGER NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS special_dates (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT NOT NULL, date TEXT NOT NULL, yearly INTEGER NOT NULL, source TEXT NOT NULL)")
+                listOf("Личное" to "GENERAL", "Работа" to "WORK", "Подработка" to "SIDE_JOB", "Праздники" to "HOLIDAY").forEach { (name, kind) ->
+                    database.execSQL("INSERT INTO event_categories(name, kind) VALUES (?, ?)", arrayOf(name, kind))
+                }
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -119,10 +139,18 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "life_assistant_database"
                 )
+                    .addCallback(object : RoomDatabase.Callback() {
+                        override fun onCreate(db: SupportSQLiteDatabase) {
+                            listOf("Личное" to "GENERAL", "Работа" to "WORK", "Подработка" to "SIDE_JOB", "Праздники" to "HOLIDAY").forEach { (name, kind) ->
+                                db.execSQL("INSERT INTO event_categories(name, kind) VALUES (?, ?)", arrayOf(name, kind))
+                            }
+                        }
+                    })
                     .addMigrations(
                         MIGRATION_1_2,
                         MIGRATION_2_3,
-                        MIGRATION_3_4
+                        MIGRATION_3_4,
+                        MIGRATION_4_5
                         )
                     .build()
                     .also {

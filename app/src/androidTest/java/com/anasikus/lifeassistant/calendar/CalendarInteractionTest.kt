@@ -140,7 +140,7 @@ class CalendarInteractionTest {
                     event = CalendarEventEntity(title = "Работа", startDate = "2026-11-05", startMinute = 480, durationMinutes = 720),
                     initialDate = "2026-11-06", initialStartMinute = 475, initialDurationMinutes = 240,
                     onDismiss = {},
-                    onSave = { _, _, date, start, duration, _ -> saved = TimelineRange(start, duration); savedDate = date }
+                    onSave = { _, _, date, start, duration, _, _, _ -> saved = TimelineRange(start, duration); savedDate = date }
                 )
             }
         }
