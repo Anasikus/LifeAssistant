@@ -43,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -61,10 +60,10 @@ import com.anasikus.lifeassistant.domain.ScheduledTask
 import com.anasikus.lifeassistant.ui.AppColors
 import com.anasikus.lifeassistant.domain.TimelineRange
 import com.anasikus.lifeassistant.ui.components.CalendarTimelineCard
+import com.anasikus.lifeassistant.ui.components.TimePickerField
 import com.anasikus.lifeassistant.ui.components.CalendarEventDialog
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
 import com.anasikus.lifeassistant.viewmodel.TaskViewModel
-import android.app.TimePickerDialog
 import kotlin.math.roundToInt
 
 private enum class CalendarViewMode(val label: String) {
@@ -357,6 +356,7 @@ fun CalendarScreen(
             event = currentEvent,
             initialDate = eventInitialDate,
             initialStartMinute = eventInitialMinute,
+            initialDurationMinutes = eventInitialDuration,
             onDismiss = { showEventDialog = false },
             onSave = { title, description, date, startMinute, durationMinutes, repeatDaysMask ->
                 if (currentEvent == null) {
@@ -371,14 +371,21 @@ fun CalendarScreen(
                         )
                     )
                 } else {
-                    viewModel.updateEvent(
-                        currentEvent.copy(
+                    // Та же запись экземпляра, которую меняет перетаскивание.
+                    // Иначе старое исключение перекроет новое время из формы.
+                    viewModel.saveEditedOccurrence(
+                        event = currentEvent.copy(
                             title = title,
                             description = description,
-                            startDate = date,
+                            repeatDaysMask = repeatDaysMask
+                        ),
+                        occurrence = CalendarEventOverrideEntity(
+                            eventId = currentEvent.id,
+                            occurrenceDate = eventOccurrenceDate,
+                            date = date,
                             startMinute = startMinute,
                             durationMinutes = durationMinutes,
-                            repeatDaysMask = repeatDaysMask
+                            deleted = false
                         )
                     )
                 }
@@ -504,9 +511,6 @@ private fun TaskTimeEditDialog(
     onDismiss: () -> Unit,
     onSave: (startMinute: Int, durationMinutes: Int) -> Unit
 ) {
-    val context = LocalContext.current
-    fun formatTime(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
-
     val initialDuration = scheduled.durationMinutes
     var startMinute by remember(scheduled.task.id, scheduled.date, scheduled.startMinute) {
         mutableStateOf(scheduled.startMinute)
@@ -563,53 +567,29 @@ private fun TaskTimeEditDialog(
             ) {
                 Text(scheduled.task.title, color = Color.White, fontSize = 13.sp)
 
-                OutlinedTextField(
-                    value = formatTime(startMinute),
-                    onValueChange = {},
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        TimePickerDialog(
-                            context,
-                            { _, hour, minute ->
-                                startMinute = hour * 60 + minute
-                                updateEndFromDuration()
-                                validationError = null
-                            },
-                            startMinute / 60,
-                            startMinute % 60,
-                            true
-                        ).show()
-                    },
-                    readOnly = true,
-                    label = { Text("Начало (с)") },
-                    singleLine = true,
-                    colors = fieldColors
+                TimePickerField(
+                    label = "Начало (с)",
+                    minute = startMinute,
+                    onTimeSelected = { selected ->
+                        startMinute = selected
+                        updateEndFromDuration()
+                        validationError = null
+                    }
                 )
 
-                OutlinedTextField(
-                    value = formatTime(endMinute.coerceIn(0, 24 * 60)),
-                    onValueChange = {},
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        TimePickerDialog(
-                            context,
-                            { _, hour, minute ->
-                                val selectedEnd = hour * 60 + minute
-                                if (selectedEnd > startMinute) {
-                                    endMinute = selectedEnd
-                                    updateDurationFields(selectedEnd - startMinute)
-                                    validationError = null
-                                } else {
-                                    validationError = "Окончание должно быть позже начала."
-                                }
-                            },
-                            (endMinute / 60).coerceIn(0, 23),
-                            endMinute % 60,
-                            true
-                        ).show()
-                    },
-                    readOnly = true,
-                    label = { Text("Окончание (до)") },
-                    singleLine = true,
-                    colors = fieldColors
+                TimePickerField(
+                    label = "Окончание (до)",
+                    minute = endMinute,
+                    endOfDayAtMidnight = true,
+                    onTimeSelected = { selectedEnd ->
+                        if (selectedEnd > startMinute) {
+                            endMinute = selectedEnd
+                            updateDurationFields(selectedEnd - startMinute)
+                            validationError = null
+                        } else {
+                            validationError = "Окончание должно быть позже начала."
+                        }
+                    }
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -654,7 +634,7 @@ private fun TaskTimeEditDialog(
                     duration == null -> validationError = "Введи часы и минуты числами."
                     startMinute < 0 || startMinute >= 24 * 60 ->
                         validationError = "Начало должно быть в диапазоне 00:00–23:59."
-                    duration < 1 -> validationError = "Длительность должна быть больше нуля."
+                    duration < 15 -> validationError = "Минимальная длительность — 15 минут."
                     startMinute + duration != endMinute ->
                         validationError = "Проверь окончание и длительность."
                     endMinute > 24 * 60 -> validationError = "Задача должна завершаться не позднее 24:00."
@@ -798,9 +778,13 @@ private fun ScheduleTimeline(
                             lane = block.lane,
                             color = block.task?.let { taskPriorityColor(it.priority).copy(alpha = 0.20f) }
                                 ?: AppColors.Card,
-                            onClick = {
-                                block.event?.let(onEventClick)
-                                block.task?.let(onTaskClick)
+                            onClick = { displayedRange ->
+                                block.event?.let {
+                                    onEventClick(it.copy(startMinute = displayedRange.startMinute, durationMinutes = displayedRange.durationMinutes))
+                                }
+                                block.task?.let {
+                                    onTaskClick(it.copy(startMinute = displayedRange.startMinute, durationMinutes = displayedRange.durationMinutes))
+                                }
                             },
                             onSave = { range ->
                                 block.event?.let { onChangeEvent(it, range) }

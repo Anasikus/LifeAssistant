@@ -1,12 +1,13 @@
 package com.anasikus.lifeassistant.ui.components
 
 import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -40,6 +41,7 @@ fun CalendarEventDialog(
     event: CalendarEventEntity?,
     initialDate: String,
     initialStartMinute: Int,
+    initialDurationMinutes: Int,
     onDismiss: () -> Unit,
     onSave: (
         title: String,
@@ -56,13 +58,14 @@ fun CalendarEventDialog(
 
     var title by remember(event?.id, initialDate) { mutableStateOf(event?.title.orEmpty()) }
     var description by remember(event?.id, initialDate) { mutableStateOf(event?.description.orEmpty()) }
-    var date by remember(event?.id, initialDate) { mutableStateOf(event?.startDate ?: initialDate) }
+    var date by remember(event?.id, initialDate) { mutableStateOf(initialDate) }
     var startMinute by remember(event?.id, initialStartMinute) {
-        mutableStateOf(event?.startMinute ?: initialStartMinute)
+        mutableStateOf(initialStartMinute)
     }
-    var durationMinutes by remember(event?.id) {
-        mutableStateOf(event?.durationMinutes ?: 60)
+    var durationMinutes by remember(event?.id, initialDate, initialDurationMinutes) {
+        mutableStateOf(initialDurationMinutes)
     }
+    var timeError by remember(event?.id, initialDate) { mutableStateOf<String?>(null) }
     var repeatDaysMask by remember(event?.id) {
         mutableStateOf(event?.repeatDaysMask ?: 0)
     }
@@ -93,7 +96,10 @@ fun CalendarEventDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = {
@@ -146,20 +152,33 @@ fun CalendarEventDialog(
                     Text("Дата: ${CalendarDateUtils.formatDate(date)}", color = AppColors.Accent)
                 }
 
-                TextButton(
-                    onClick = {
-                        TimePickerDialog(
-                            context,
-                            { _, hour, minute -> startMinute = hour * 60 + minute },
-                            startMinute / 60,
-                            startMinute % 60,
-                            true
-                        ).show()
+                TimePickerField(
+                    label = "Начало (с)",
+                    minute = startMinute,
+                    onTimeSelected = {
+                        startMinute = it
+                        timeError = null
                     }
-                ) {
+                )
+                TimePickerField(
+                    label = "Окончание (до)",
+                    minute = startMinute + durationMinutes,
+                    endOfDayAtMidnight = true,
+                    onTimeSelected = { end ->
+                        if (end - startMinute >= 15) {
+                            durationMinutes = end - startMinute
+                            timeError = null
+                        } else {
+                            timeError = "Окончание должно быть хотя бы на 15 минут позже начала."
+                        }
+                    }
+                )
+                timeError?.let { Text(it, color = AppColors.Red, fontSize = 12.sp) }
+                if (event != null && event.repeatDaysMask != 0) {
                     Text(
-                        text = "Начало: %02d:%02d".format(startMinute / 60, startMinute % 60),
-                        color = AppColors.Accent
+                        "Дата и время меняются для выбранного повторения. Название, описание и дни недели — для всей серии.",
+                        color = AppColors.SecondaryText,
+                        fontSize = 11.sp
                     )
                 }
 
@@ -171,7 +190,10 @@ fun CalendarEventDialog(
                     Text("Длительность", color = AppColors.MainText)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
-                            onClick = { durationMinutes = (durationMinutes - 15).coerceAtLeast(15) }
+                            onClick = {
+                                durationMinutes = (durationMinutes - 15).coerceAtLeast(15)
+                                timeError = null
+                            }
                         ) { Text("−", color = AppColors.Accent) }
                         Text(
                             text = if (durationMinutes < 60) "$durationMinutes мин." else {
@@ -182,7 +204,10 @@ fun CalendarEventDialog(
                             color = AppColors.MainText
                         )
                         TextButton(
-                            onClick = { durationMinutes = (durationMinutes + 15).coerceAtMost(480) }
+                            onClick = {
+                                durationMinutes = (durationMinutes + 15).coerceAtMost((1440 - startMinute).coerceAtLeast(15))
+                                timeError = null
+                            }
                         ) { Text("+", color = AppColors.Accent) }
                     }
                 }
@@ -239,6 +264,8 @@ fun CalendarEventDialog(
                 onClick = {
                     if (title.isBlank()) {
                         titleError = true
+                    } else if (durationMinutes < 15 || startMinute + durationMinutes > 1440) {
+                        timeError = "Выбери длительность от 15 минут и окончание не позднее 24:00."
                     } else {
                         onSave(
                             title.trim(),

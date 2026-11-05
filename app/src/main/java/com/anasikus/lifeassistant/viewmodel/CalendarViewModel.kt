@@ -68,6 +68,15 @@ class CalendarViewModel(
         }
     }
 
+    fun saveEditedOccurrence(
+        event: CalendarEventEntity,
+        occurrence: CalendarEventOverrideEntity
+    ) {
+        viewModelScope.launch {
+            repository.saveEditedOccurrence(event, occurrence)
+        }
+    }
+
     fun saveEventOverride(override: CalendarEventOverrideEntity) {
         viewModelScope.launch {
             repository.saveEventOverride(override)

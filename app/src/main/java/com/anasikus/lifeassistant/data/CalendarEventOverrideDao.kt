@@ -5,6 +5,8 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -15,6 +17,19 @@ interface CalendarEventOverrideDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(override: CalendarEventOverrideEntity)
+
+    @Update
+    suspend fun updateEvent(event: CalendarEventEntity)
+
+    /** Одна транзакция: описание серии и время выбранного экземпляра. */
+    @Transaction
+    suspend fun saveEditedOccurrence(
+        event: CalendarEventEntity,
+        occurrence: CalendarEventOverrideEntity
+    ) {
+        updateEvent(event)
+        save(occurrence)
+    }
 
     @Query(
         """

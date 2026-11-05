@@ -47,6 +47,13 @@ class CalendarRepository(
         placementDao.deleteForTask(taskId)
     }
 
+    suspend fun saveEditedOccurrence(
+        event: CalendarEventEntity,
+        occurrence: CalendarEventOverrideEntity
+    ) {
+        overrideDao.saveEditedOccurrence(event, occurrence)
+    }
+
     suspend fun saveEventOverride(
         override: CalendarEventOverrideEntity
     ) {

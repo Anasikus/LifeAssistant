@@ -18,6 +18,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -47,15 +49,22 @@ fun CalendarTimelineCard(
     laneWidth: Dp,
     lane: Int,
     color: Color,
-    onClick: () -> Unit,
+    onClick: (TimelineRange) -> Unit,
     onSave: (TimelineRange) -> Unit
 ) {
     val density = LocalDensity.current
-    // Сохраняем preview после отпускания, пока Room не вернёт сохранённые данные.
-    // Обновление range извне (например, из формы) заменяет preview.
-    var preview by remember(itemKey, range) { mutableStateOf(range) }
+    // Объект MutableState должен оставаться тем же: pointerInput живёт дольше
+    // отдельной рекомпозиции и продолжает обращаться к захваченному объекту.
+    var preview by remember(itemKey) { mutableStateOf(range) }
     var interacting by remember(itemKey) { mutableStateOf(false) }
-    val currentPreview by rememberUpdatedState(preview)
+    var pendingRanges by remember(itemKey) { mutableStateOf(emptyList<TimelineRange>()) }
+    LaunchedEffect(range) {
+        // Room может подтвердить предыдущий жест уже после следующего.
+        // Подтверждение старой записи не должно откатить последний preview.
+        val acknowledged = pendingRanges.indexOfLast { it == range }
+        pendingRanges = if (acknowledged >= 0) pendingRanges.drop(acknowledged + 1) else emptyList()
+        if (!interacting && pendingRanges.isEmpty()) preview = range
+    }
     val currentClick by rememberUpdatedState(onClick)
     val currentSave by rememberUpdatedState(onSave)
 
@@ -76,12 +85,13 @@ fun CalendarTimelineCard(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .testTag("calendar-body-$itemKey")
                     .pointerInput(itemKey, density) {
-                        var origin = currentPreview
+                        var origin = preview
                         var totalPx = 0f
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
-                                origin = currentPreview
+                                origin = preview
                                 totalPx = 0f
                                 interacting = true
                             },
@@ -92,13 +102,16 @@ fun CalendarTimelineCard(
                             },
                             onDragEnd = {
                                 interacting = false
-                                if (preview != origin) currentSave(preview)
+                                if (preview != origin) {
+                                    pendingRanges = pendingRanges + preview
+                                    currentSave(preview)
+                                }
                             },
                             onDragCancel = { preview = origin; interacting = false }
                         )
                     }
                     .pointerInput(itemKey) {
-                        detectTapGestures(onTap = { currentClick() })
+                        detectTapGestures(onTap = { currentClick(preview) })
                     }
                     .padding(horizontal = 5.dp, vertical = 3.dp)
             ) {
@@ -129,12 +142,13 @@ fun CalendarTimelineCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(14.dp)
+                    .testTag("calendar-resize-$itemKey")
                     .pointerInput(itemKey, density) {
-                        var origin = currentPreview
+                        var origin = preview
                         var totalPx = 0f
                         detectDragGestures(
                             onDragStart = {
-                                origin = currentPreview
+                                origin = preview
                                 totalPx = 0f
                                 interacting = true
                             },
@@ -145,7 +159,10 @@ fun CalendarTimelineCard(
                             },
                             onDragEnd = {
                                 interacting = false
-                                if (preview != origin) currentSave(preview)
+                                if (preview != origin) {
+                                    pendingRanges = pendingRanges + preview
+                                    currentSave(preview)
+                                }
                             },
                             onDragCancel = { preview = origin; interacting = false }
                         )
