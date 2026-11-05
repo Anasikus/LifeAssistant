@@ -2,7 +2,6 @@ package com.anasikus.lifeassistant.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +59,8 @@ import com.anasikus.lifeassistant.domain.CalendarEventRules
 import com.anasikus.lifeassistant.domain.CalendarTaskScheduler
 import com.anasikus.lifeassistant.domain.ScheduledTask
 import com.anasikus.lifeassistant.ui.AppColors
+import com.anasikus.lifeassistant.domain.TimelineRange
+import com.anasikus.lifeassistant.ui.components.CalendarTimelineCard
 import com.anasikus.lifeassistant.ui.components.CalendarEventDialog
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
 import com.anasikus.lifeassistant.viewmodel.TaskViewModel
@@ -152,7 +152,7 @@ fun CalendarScreen(
         editingEvent = null
         eventInitialDate = date
         eventOccurrenceDate = date
-        eventInitialMinute = minute.coerceIn(0, 23 * 60)
+        eventInitialMinute = minute.coerceIn(0, 24 * 60 - 15)
         eventInitialDuration = 60
         showEventDialog = true
     }
@@ -172,8 +172,8 @@ fun CalendarScreen(
         durationMinutes: Int = scheduled.durationMinutes,
         hidden: Boolean = false
     ) {
-        val safeDuration = durationMinutes.coerceIn(15, 16 * 60)
-        val safeStart = startMinute.coerceIn(7 * 60, 23 * 60 - safeDuration)
+        val safeDuration = durationMinutes.coerceIn(15, 24 * 60)
+        val safeStart = startMinute.coerceIn(0, 24 * 60 - safeDuration)
         viewModel.savePlacement(
             CalendarTaskPlacementEntity(
                 taskId = scheduled.task.id,
@@ -272,6 +272,7 @@ fun CalendarScreen(
             }
 
             if (mode == CalendarViewMode.DAY) {
+                Text("Удерживай карточку для переноса. Потяни нижнюю ручку, чтобы изменить длительность.", color = AppColors.SecondaryText, fontSize = 11.sp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -307,10 +308,12 @@ fun CalendarScreen(
                         onAddEvent = ::openNewEvent,
                         onEventClick = ::openExistingEvent,
                         onTaskClick = { taskForActions = it },
-                        onMoveTask = { task, start -> saveTaskPlacement(task, startMinute = start) },
-                        onResizeTask = { task, duration -> saveTaskPlacement(task, durationMinutes = duration) },
-                        onMoveEvent = { event, start -> saveEventPosition(event, startMinute = start) },
-                        onResizeEvent = { event, duration -> saveEventPosition(event, durationMinutes = duration) },
+                        onChangeTask = { task, range ->
+                            saveTaskPlacement(task, startMinute = range.startMinute, durationMinutes = range.durationMinutes)
+                        },
+                        onChangeEvent = { event, range ->
+                            saveEventPosition(event, startMinute = range.startMinute, durationMinutes = range.durationMinutes)
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -509,7 +512,7 @@ private fun TaskTimeEditDialog(
         mutableStateOf(scheduled.startMinute)
     }
     var endMinute by remember(scheduled.task.id, scheduled.date, scheduled.startMinute, initialDuration) {
-        mutableStateOf((scheduled.startMinute + initialDuration).coerceAtMost(23 * 60))
+        mutableStateOf((scheduled.startMinute + initialDuration).coerceAtMost(24 * 60))
     }
     var durationHoursText by remember(scheduled.task.id, initialDuration) {
         mutableStateOf((initialDuration / 60).toString())
@@ -649,12 +652,12 @@ private fun TaskTimeEditDialog(
                 val duration = currentDuration()
                 when {
                     duration == null -> validationError = "Введи часы и минуты числами."
-                    startMinute < 7 * 60 || startMinute >= 23 * 60 ->
-                        validationError = "Начало должно быть в диапазоне 07:00–22:59."
+                    startMinute < 0 || startMinute >= 24 * 60 ->
+                        validationError = "Начало должно быть в диапазоне 00:00–23:59."
                     duration < 1 -> validationError = "Длительность должна быть больше нуля."
                     startMinute + duration != endMinute ->
                         validationError = "Проверь окончание и длительность."
-                    endMinute > 23 * 60 -> validationError = "Задача должна завершаться не позднее 23:00."
+                    endMinute > 24 * 60 -> validationError = "Задача должна завершаться не позднее 24:00."
                     else -> onSave(startMinute, duration)
                 }
             }) { Text("Сохранить", color = AppColors.Accent) }
@@ -665,8 +668,8 @@ private fun TaskTimeEditDialog(
     )
 }
 
-private const val TIMELINE_START_MINUTE = 7 * 60
-private const val TIMELINE_END_MINUTE = 23 * 60
+private const val TIMELINE_START_MINUTE = 0
+private const val TIMELINE_END_MINUTE = 24 * 60
 private val TIMELINE_HEIGHT: Dp = (TIMELINE_END_MINUTE - TIMELINE_START_MINUTE).dp
 
 private data class TimelineBlock(
@@ -703,10 +706,8 @@ private fun ScheduleTimeline(
     onAddEvent: (String, Int) -> Unit,
     onEventClick: (CalendarEventOccurrence) -> Unit,
     onTaskClick: (ScheduledTask) -> Unit,
-    onMoveTask: (ScheduledTask, Int) -> Unit,
-    onResizeTask: (ScheduledTask, Int) -> Unit,
-    onMoveEvent: (CalendarEventOccurrence, Int) -> Unit,
-    onResizeEvent: (CalendarEventOccurrence, Int) -> Unit,
+    onChangeTask: (ScheduledTask, TimelineRange) -> Unit,
+    onChangeEvent: (CalendarEventOccurrence, TimelineRange) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val blocks = remember(occurrences, tasks) {
@@ -721,7 +722,7 @@ private fun ScheduleTimeline(
             }
             tasks.forEach { scheduled ->
                 add(TimelineBlock(
-                    id = "task_${scheduled.task.id}",
+                    id = "task_${scheduled.task.id}_${scheduled.date}",
                     startMinute = scheduled.startMinute,
                     durationMinutes = scheduled.durationMinutes,
                     task = scheduled
@@ -733,7 +734,7 @@ private fun ScheduleTimeline(
     val density = LocalDensity.current
 
     Column(
-        modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState(initial = with(density) { (7 * 60).dp.roundToPx() })),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
@@ -745,7 +746,7 @@ private fun ScheduleTimeline(
 
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Box(modifier = Modifier.width(48.dp).height(TIMELINE_HEIGHT)) {
-                for (hour in 7..22) {
+                for (hour in 0..23) {
                     Text(
                         text = "%02d:00".format(hour),
                         modifier = Modifier.offset(y = ((hour * 60 - TIMELINE_START_MINUTE).coerceAtLeast(0)).dp),
@@ -754,7 +755,7 @@ private fun ScheduleTimeline(
                     )
                 }
                 Text(
-                    text = "23:00",
+                    text = "24:00",
                     modifier = Modifier.align(Alignment.BottomStart),
                     color = AppColors.SecondaryText,
                     fontSize = 10.sp
@@ -789,252 +790,29 @@ private fun ScheduleTimeline(
 
                 arrangedBlocks.forEach { block ->
                     key(block.id) {
-                        val topMinute = (block.startMinute - TIMELINE_START_MINUTE).coerceAtLeast(0)
-                        val visualHeight = block.durationMinutes.coerceAtLeast(30)
-                            .coerceAtMost((TIMELINE_END_MINUTE - block.startMinute).coerceAtLeast(15))
-                        if (block.event != null) {
-                            EventTimelineCard(
-                                occurrence = block.event,
-                                laneWidth = laneWidth,
-                                lane = block.lane,
-                                blockTopMinute = topMinute,
-                                blockHeightMinutes = visualHeight,
-                                onClick = { onEventClick(block.event) },
-                                onMove = { onMoveEvent(block.event, it) },
-                                onResize = { onResizeEvent(block.event, it) }
-                            )
-                        } else if (block.task != null) {
-                            TaskTimelineCard(
-                                scheduled = block.task,
-                                laneWidth = laneWidth,
-                                lane = block.lane,
-                                blockTopMinute = topMinute,
-                                blockHeightMinutes = visualHeight,
-                                onClick = { onTaskClick(block.task) },
-                                onMove = { onMoveTask(block.task, it) },
-                                onResize = { onResizeTask(block.task, it) }
-                            )
-                        }
+                        CalendarTimelineCard(
+                            itemKey = block.id,
+                            title = block.event?.event?.title ?: block.task!!.task.title,
+                            range = TimelineRange(block.startMinute, block.durationMinutes),
+                            laneWidth = laneWidth,
+                            lane = block.lane,
+                            color = block.task?.let { taskPriorityColor(it.priority).copy(alpha = 0.20f) }
+                                ?: AppColors.Card,
+                            onClick = {
+                                block.event?.let(onEventClick)
+                                block.task?.let(onTaskClick)
+                            },
+                            onSave = { range ->
+                                block.event?.let { onChangeEvent(it, range) }
+                                block.task?.let { onChangeTask(it, range) }
+                            }
+                        )
                     }
                 }
             }
         }
     }
 }
-
-@Composable
-private fun TaskTimelineCard(
-    scheduled: ScheduledTask,
-    laneWidth: Dp,
-    lane: Int,
-    blockTopMinute: Int,
-    blockHeightMinutes: Int,
-    onClick: () -> Unit,
-    onMove: (Int) -> Unit,
-    onResize: (Int) -> Unit
-) {
-    val density = LocalDensity.current
-    var dragOffsetPx by remember(scheduled.task.id, scheduled.date, scheduled.startMinute) {
-        mutableStateOf(0f)
-    }
-    var previewDuration by remember(scheduled.task.id, scheduled.date, scheduled.startMinute, scheduled.durationMinutes) {
-        mutableStateOf(scheduled.durationMinutes)
-    }
-
-    Card(
-        modifier = Modifier
-            .offset(x = (laneWidth.value * lane).dp, y = blockTopMinute.dp)
-            .width(laneWidth)
-            .height(previewDuration.coerceAtLeast(30).dp)
-            .graphicsLayer { translationY = dragOffsetPx }
-            .pointerInput(scheduled.task.id, scheduled.date, scheduled.startMinute) {
-                detectDragGestures(
-                    onDragStart = { dragOffsetPx = 0f },
-                    onDrag = { change, amount ->
-                        dragOffsetPx += amount.y
-                        change.consume()
-                    },
-                    onDragEnd = {
-                        val deltaMinutes = with(density) { dragOffsetPx.toDp().value.roundToInt() }
-                        dragOffsetPx = 0f
-                        val newStart = snapToMinutes(
-                            (scheduled.startMinute + deltaMinutes).coerceIn(
-                                TIMELINE_START_MINUTE,
-                                TIMELINE_END_MINUTE - scheduled.durationMinutes
-                            ),
-                            1
-                        )
-                        onMove(newStart)
-                    },
-                    onDragCancel = { dragOffsetPx = 0f }
-                )
-            },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = taskPriorityColor(scheduled.priority).copy(alpha = 0.20f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize().clickable(onClick = onClick).padding(horizontal = 5.dp, vertical = 3.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = scheduled.task.title,
-                color = AppColors.MainText,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-                maxLines = 2
-            )
-            Text(
-                text = "Приоритет ${scheduled.priority}",
-                color = taskPriorityColor(scheduled.priority),
-                fontSize = 10.sp
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            ResizeHandle(
-                pointerKey = "task_${scheduled.task.id}_${scheduled.startMinute}",
-                currentDuration = scheduled.durationMinutes,
-                maxDuration = TIMELINE_END_MINUTE - scheduled.startMinute,
-                onPreviewResize = { previewDuration = it },
-                onResize = onResize
-            )
-        }
-    }
-}
-
-@Composable
-private fun EventTimelineCard(
-    occurrence: CalendarEventOccurrence,
-    laneWidth: Dp,
-    lane: Int,
-    blockTopMinute: Int,
-    blockHeightMinutes: Int,
-    onClick: () -> Unit,
-    onMove: (Int) -> Unit,
-    onResize: (Int) -> Unit
-) {
-    val density = LocalDensity.current
-    var dragOffsetPx by remember(occurrence.event.id, occurrence.occurrenceDate, occurrence.startMinute) {
-        mutableStateOf(0f)
-    }
-    var previewDuration by remember(occurrence.event.id, occurrence.occurrenceDate, occurrence.startMinute, occurrence.durationMinutes) {
-        mutableStateOf(occurrence.durationMinutes)
-    }
-
-    Card(
-        modifier = Modifier
-            .offset(x = (laneWidth.value * lane).dp, y = blockTopMinute.dp)
-            .width(laneWidth)
-            .height(previewDuration.coerceAtLeast(30).dp)
-            .graphicsLayer { translationY = dragOffsetPx }
-            .pointerInput(occurrence.event.id, occurrence.occurrenceDate, occurrence.startMinute) {
-                detectDragGestures(
-                    onDragStart = { dragOffsetPx = 0f },
-                    onDrag = { change, amount ->
-                        dragOffsetPx += amount.y
-                        change.consume()
-                    },
-                    onDragEnd = {
-                        val deltaMinutes = with(density) { dragOffsetPx.toDp().value.roundToInt() }
-                        dragOffsetPx = 0f
-                        val newStart = snapToMinutes(
-                            (occurrence.startMinute + deltaMinutes).coerceIn(
-                                0,
-                                24 * 60 - occurrence.durationMinutes
-                            ),
-                            1
-                        )
-                        onMove(newStart)
-                    },
-                    onDragCancel = { dragOffsetPx = 0f }
-                )
-            },
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = AppColors.Card)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize().clickable(onClick = onClick).padding(horizontal = 5.dp, vertical = 3.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = occurrence.event.title,
-                color = AppColors.MainText,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-                maxLines = 2
-            )
-            Text(
-                text = "%02d:%02d".format(occurrence.startMinute / 60, occurrence.startMinute % 60),
-                color = AppColors.SecondaryText,
-                fontSize = 10.sp
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            ResizeHandle(
-                pointerKey = "event_${occurrence.event.id}_${occurrence.occurrenceDate}_${occurrence.startMinute}",
-                currentDuration = occurrence.durationMinutes,
-                maxDuration = 24 * 60 - occurrence.startMinute,
-                onPreviewResize = { previewDuration = it },
-                onResize = onResize
-            )
-        }
-    }
-}
-
-@Composable
-private fun ResizeHandle(
-    pointerKey: String,
-    currentDuration: Int,
-    maxDuration: Int,
-    onPreviewResize: (Int) -> Unit,
-    onResize: (Int) -> Unit
-) {
-    val density = LocalDensity.current
-    var accumulatedDragPx by remember(pointerKey) { mutableStateOf(0f) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(14.dp)
-            .pointerInput(pointerKey, currentDuration, maxDuration) {
-                detectDragGestures(
-                    onDragStart = { accumulatedDragPx = 0f },
-                    onDrag = { change, amount ->
-                        accumulatedDragPx += amount.y
-                        val deltaMinutes = with(density) {
-                            accumulatedDragPx.toDp().value.roundToInt()
-                        }
-                        val preview = (currentDuration + deltaMinutes).coerceIn(15, maxDuration)
-                        onPreviewResize(preview)
-                        change.consume()
-                    },
-                    onDragEnd = {
-                        val deltaMinutes = with(density) {
-                            accumulatedDragPx.toDp().value.roundToInt()
-                        }
-                        accumulatedDragPx = 0f
-                        val newDuration = (currentDuration + deltaMinutes).coerceIn(15, maxDuration)
-                        onPreviewResize(newDuration)
-                        onResize(newDuration)
-                    },
-                    onDragCancel = {
-                        accumulatedDragPx = 0f
-                        onPreviewResize(currentDuration)
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .width(28.dp)
-                .height(3.dp)
-                .background(AppColors.SecondaryText.copy(alpha = 0.8f), RoundedCornerShape(2.dp))
-        )
-    }
-}
-
-private fun snapToMinutes(value: Int, step: Int): Int =
-    (((value + step / 2) / step) * step)
 
 @Composable
 private fun WeekTasksContent(

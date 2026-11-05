@@ -129,11 +129,11 @@ object CalendarTaskScheduler {
 
     /**
      * Размещает незавершённые задачи в свободное время.
-     * Сохранённое размещение считается предпочтительным. Если оно скрыто для
+     * Ручное размещение сохраняется, включая пересечения с мероприятиями. Если оно скрыто для
      * конкретного дня, задача не появится в этот день и будет искать другое окно.
      *
-     * Задачи могут пересекаться без фиксированного лимита.
-     * Фиксированные мероприятия не перекрываются задачами.
+     * Автоматические слоты не пересекаются с мероприятиями и другими задачами.
+     * Ручные слоты могут пересекаться: например, работа и программирование.
      */
     fun schedule(
         tasks: List<TaskEntity>,
@@ -146,8 +146,6 @@ object CalendarTaskScheduler {
 
         val today = CalendarDateUtils.today()
         val effectiveStart = maxOf(rangeStart, today)
-        if (effectiveStart > rangeEnd) return emptyList()
-
         val dates = CalendarDateUtils.datesBetween(effectiveStart, rangeEnd)
         val placementsByTaskId = placements.associateBy { it.taskId }
         val result = mutableListOf<ScheduledTask>()
@@ -164,13 +162,12 @@ object CalendarTaskScheduler {
             if (
                 start < DAY_START_MINUTE ||
                 end > DAY_END_MINUTE ||
-                conflictsWithEvent(date, start, end)
+                conflictsWithEvent(date, start, end) ||
+                result.any { it.date == date && start < it.startMinute + it.durationMinutes && end > it.startMinute }
             ) {
                 return false
             }
 
-            // Задачи могут накладываться друг на друга без фиксированного лимита.
-            // Пересечения с мероприятиями по-прежнему запрещены.
             return true
         }
 
@@ -182,52 +179,39 @@ object CalendarTaskScheduler {
                     .thenBy { it.id }
             )
 
-        pendingTasks.forEach taskLoop@ { task ->
-            val storedPlacement = placementsByTaskId[task.id]
-            // Если дедлайн уже прошёл, а сохранённый слот остался в прошлом,
-            // считаем его устаревшим и заново размещаем задачу в текущем расписании.
-            val savedPlacement = storedPlacement?.takeUnless {
-                task.deadline.isNotBlank() && task.deadline < today && it.date < today
-            }
-            val duration = (savedPlacement?.durationMinutes ?: DEFAULT_TASK_DURATION_MINUTES)
-                .coerceIn(15, DAY_END_MINUTE - DAY_START_MINUTE)
-
-            // Ручное размещение вне текущего периода остаётся вне экрана.
-            if (
-                savedPlacement != null &&
-                !savedPlacement.hidden &&
-                (savedPlacement.date < rangeStart || savedPlacement.date > rangeEnd)
-            ) {
-                return@taskLoop
-            }
-
-            val excludedDate = savedPlacement
-                ?.takeIf { it.hidden }
-                ?.date
-
-            // Сначала сохраняем ручной слот, если он существует и допустим.
-            if (
-                savedPlacement != null &&
-                !savedPlacement.hidden &&
-                savedPlacement.date in dates &&
-                canPlace(savedPlacement.date, savedPlacement.startMinute, duration)
-            ) {
-                result.add(
-                    ScheduledTask(
-                        task = task,
-                        date = savedPlacement.date,
-                        startMinute = savedPlacement.startMinute,
-                        durationMinutes = duration,
-                        priority = priority(task, today)
+        // Сначала резервируем ВСЕ ручные слоты: автоматическая задача более
+        // высокого приоритета не должна занять место ещё не обработанной ручной.
+        val automaticTasks = pendingTasks.filter { task ->
+            val saved = placementsByTaskId[task.id]
+            if (saved == null || saved.hidden) {
+                true
+            } else {
+                if (saved.date in rangeStart..rangeEnd) {
+                    val duration = saved.durationMinutes.coerceIn(15, 24 * 60)
+                    result.add(
+                        ScheduledTask(
+                            task = task,
+                            date = saved.date,
+                            startMinute = saved.startMinute.coerceIn(0, 24 * 60 - duration),
+                            durationMinutes = duration,
+                            priority = priority(task, today)
+                        )
                     )
-                )
-                return@taskLoop
+                }
+                false
             }
+        }
+
+        automaticTasks.forEach { task ->
+            val savedPlacement = placementsByTaskId[task.id]
+            val duration = (savedPlacement?.durationMinutes ?: DEFAULT_TASK_DURATION_MINUTES)
+                .coerceIn(15, 24 * 60)
+            val excludedDate = savedPlacement?.takeIf { it.hidden }?.date
 
             // Иначе ищем ранний доступный слот, кроме скрытой для задачи даты.
             var placed = false
             for (date in dates) {
-                if (date == excludedDate) continue
+                if (date == excludedDate || (task.startDate.isNotBlank() && date < task.startDate)) continue
 
                 var minute = DAY_START_MINUTE
                 while (minute + duration <= DAY_END_MINUTE) {
