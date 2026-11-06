@@ -30,5 +30,7 @@ data class CalendarEventEntity(
     val categoryId: Int? = null,
     /** Плановая разовая выплата, в копейках; не банковская операция. */
     val oneTimePaymentCents: Long? = null,
-    val hourlyRateCents: Long? = null
+    val hourlyRateCents: Long? = null,
+    val payMode: String? = null,
+    val payAmountCents: Long? = null
 )

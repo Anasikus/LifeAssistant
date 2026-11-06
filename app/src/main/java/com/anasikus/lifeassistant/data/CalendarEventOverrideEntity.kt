@@ -19,5 +19,7 @@ data class CalendarEventOverrideEntity(
     val date: String,
     val startMinute: Int,
     val durationMinutes: Int,
-    val deleted: Boolean = false
+    val deleted: Boolean = false,
+    val payMode: String? = null,
+    val payAmountCents: Long? = null
 )

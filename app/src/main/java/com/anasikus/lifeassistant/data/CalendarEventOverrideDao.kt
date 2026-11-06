@@ -25,10 +25,10 @@ interface CalendarEventOverrideDao {
     @Transaction
     suspend fun saveEditedOccurrence(
         event: CalendarEventEntity,
-        occurrence: CalendarEventOverrideEntity
+        occurrence: CalendarEventOverrideEntity?
     ) {
         updateEvent(event)
-        save(occurrence)
+        if (occurrence == null) deleteForEvent(event.id) else save(occurrence)
     }
 
     @Query(

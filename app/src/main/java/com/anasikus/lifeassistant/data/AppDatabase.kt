@@ -18,9 +18,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ShiftPatternEntity::class,
         ShiftDayEntity::class,
         SpecialDateEntity::class,
-        FinanceTransactionEntity::class
+        FinanceTransactionEntity::class,
+        ExpenseCategoryEntity::class,
+        PaymentPlanEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -150,6 +152,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN payMode TEXT")
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN payAmountCents INTEGER")
+                database.execSQL("ALTER TABLE calendar_event_overrides ADD COLUMN payMode TEXT")
+                database.execSQL("ALTER TABLE calendar_event_overrides ADD COLUMN payAmountCents INTEGER")
+                database.execSQL("ALTER TABLE finance_transactions ADD COLUMN expenseCategoryId INTEGER")
+                database.execSQL("ALTER TABLE finance_transactions ADD COLUMN planKey TEXT")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_finance_transactions_planKey ON finance_transactions(planKey)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS expense_categories (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS payment_plans (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT NOT NULL, amountCents INTEGER NOT NULL, startDate TEXT NOT NULL, everyMonths INTEGER NOT NULL, reminderDays INTEGER NOT NULL, categoryId INTEGER)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -169,7 +185,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_2_3,
                         MIGRATION_3_4,
                         MIGRATION_4_5,
-                        MIGRATION_5_6
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
                         )
                     .build()
                     .also {

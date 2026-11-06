@@ -51,7 +51,7 @@ class CalendarRepository(
 
     suspend fun saveEditedOccurrence(
         event: CalendarEventEntity,
-        occurrence: CalendarEventOverrideEntity
+        occurrence: CalendarEventOverrideEntity?
     ) {
         overrideDao.saveEditedOccurrence(event, occurrence)
     }

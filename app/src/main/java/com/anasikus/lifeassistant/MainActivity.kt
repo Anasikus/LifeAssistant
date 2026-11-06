@@ -2,6 +2,12 @@
 package com.anasikus.lifeassistant
 
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import com.anasikus.lifeassistant.notifications.PaymentReminders
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +42,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val database = AppDatabase.getDatabase(applicationContext)
+        val planning = database.calendarPlanningDao()
+        lifecycleScope.launch(Dispatchers.IO) {
+            combine(planning.paymentPlans(), planning.financeTransactions()) { plans, transactions ->
+                plans to transactions
+            }.collect { (plans, transactions) ->
+                PaymentReminders.update(applicationContext, plans, transactions)
+            }
+        }
 
         val taskRepository = TaskRepository(database.taskDao())
         val taskFactory = TaskViewModelFactory(taskRepository)

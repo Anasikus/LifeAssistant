@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.anasikus.lifeassistant.data.ExpenseCategoryEntity
 import com.anasikus.lifeassistant.data.FinanceTransactionEntity
 import com.anasikus.lifeassistant.domain.CalendarDateUtils
 import com.anasikus.lifeassistant.domain.FinanceRules
@@ -16,6 +17,10 @@ import com.anasikus.lifeassistant.domain.FinanceSource
 import com.anasikus.lifeassistant.domain.ShiftRules
 import com.anasikus.lifeassistant.ui.AppColors
 import com.anasikus.lifeassistant.ui.components.PlanningDateField
+import com.anasikus.lifeassistant.ui.components.ExpenseCategoryPicker
+import com.anasikus.lifeassistant.ui.components.ExpenseCategoriesDialog
+import com.anasikus.lifeassistant.ui.components.PaymentPlansDialog
+import com.anasikus.lifeassistant.ui.components.FinanceStatisticsDialog
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
 import java.util.Calendar
 import kotlinx.coroutines.delay
@@ -29,6 +34,10 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
     val pattern by viewModel.shiftPattern.collectAsState()
     val days by viewModel.shiftDays.collectAsState()
     val transactions by viewModel.financeTransactions.collectAsState()
+    val categories by viewModel.expenseCategories.collectAsState()
+    var showPlans by remember { mutableStateOf(false) }
+    var showCategories by remember { mutableStateOf(false) }
+    var showStatistics by remember { mutableStateOf(false) }
     val now by produceState(Calendar.getInstance()) {
         while (true) {
             value = Calendar.getInstance()
@@ -95,10 +104,22 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
                     OutlinedButton(onClick = { newIncome = false }, modifier = Modifier.weight(1f)) { Text("Расход") }
                 }
             }
+            item {
+                Column {
+                    OutlinedButton(onClick = { showPlans = true }, modifier = Modifier.fillMaxWidth()) { Text("Регулярные платежи") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { showCategories = true }) { Text("Категории расходов") }
+                        TextButton(onClick = { showStatistics = true }) { Text("Статистика") }
+                    }
+                }
+            }
             if (sources.isNotEmpty()) {
                 item { Text("К выплате по работам", color = AppColors.MainText) }
                 items(sources, key = { it.key }) { source ->
-                    Text("${source.name} · ${ShiftRules.money(FinanceRules.outstanding(source, paymentsThroughCutoff))}", color = AppColors.SecondaryText)
+                    Column {
+                        Text("${source.name} · ${ShiftRules.money(FinanceRules.outstanding(source, paymentsThroughCutoff))}", color = AppColors.SecondaryText)
+                        source.plannedAdvance?.let { Text("Плановый аванс · ${ShiftRules.money(it)}", color = AppColors.SecondaryText) }
+                    }
                 }
             }
             item { Text("История операций", color = AppColors.MainText) }
@@ -109,6 +130,11 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
                         val sign = if (transaction.income) "+" else "−"
                         Text("$sign${ShiftRules.money(transaction.amountCents)}", color = if (transaction.income) AppColors.Green else AppColors.Red)
                         Text(CalendarDateUtils.formatDate(transaction.date), color = AppColors.SecondaryText)
+                        if (!transaction.income) {
+                            ExpenseCategoryPicker(categories, transaction.expenseCategoryId) {
+                                viewModel.setExpenseCategory(transaction.id, it)
+                            }
+                        }
                         transaction.sourceName?.let { Text(it, color = AppColors.MainText) }
                         if (transaction.note.isNotBlank()) Text(transaction.note, color = AppColors.SecondaryText)
                         TextButton(onClick = { deleting = transaction }) { Text("Удалить") }
@@ -116,8 +142,11 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
                 }
             }
         }
+        if (showPlans) PaymentPlansDialog(viewModel, if (monthEnd < today) month else today) { showPlans = false }
+        if (showCategories) ExpenseCategoriesDialog(viewModel) { showCategories = false }
+        if (showStatistics) FinanceStatisticsDialog(transactions, categories, month, cutoff) { showStatistics = false }
         newIncome?.let { income ->
-            TransactionDialog(income, sources, today, if (monthEnd < today) month else today, onDismiss = { newIncome = null }) {
+            TransactionDialog(income, sources, categories, today, if (monthEnd < today) month else today, onDismiss = { newIncome = null }) {
                 viewModel.addFinanceTransaction(it)
                 newIncome = null
             }
@@ -152,6 +181,7 @@ private fun FinanceMetric(label: String, amount: Long, modifier: Modifier = Modi
 private fun TransactionDialog(
     income: Boolean,
     sources: List<FinanceSource>,
+    categories: List<ExpenseCategoryEntity>,
     today: String,
     initialDate: String,
     onDismiss: () -> Unit,
@@ -160,6 +190,7 @@ private fun TransactionDialog(
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(initialDate) }
+    var categoryId by remember { mutableStateOf<Int?>(null) }
     var selected by remember { mutableStateOf<FinanceSource?>(null) }
     var menu by remember { mutableStateOf(false) }
     val cents = ShiftRules.cents(amount)
@@ -172,6 +203,7 @@ private fun TransactionDialog(
                 OutlinedTextField(note, { note = it }, label = { Text("Комментарий") })
                 PlanningDateField("Дата операции", date) { date = it }
                 if (date > today) Text("Укажи дату не позднее сегодняшней", color = AppColors.Red)
+                if (!income) ExpenseCategoryPicker(categories, categoryId) { categoryId = it }
                 if (income) {
                     Box {
                         OutlinedButton(onClick = { menu = true }) {
@@ -197,7 +229,8 @@ private fun TransactionDialog(
                         amountCents = checkNotNull(cents),
                         note = note.trim(),
                         sourceKey = selected?.key,
-                        sourceName = selected?.name
+                        sourceName = selected?.name,
+                        expenseCategoryId = if (income) null else categoryId
                     ))
                 }
             ) { Text("Сохранить") }

@@ -9,11 +9,45 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CalendarPlanningDao {
+    @Query("SELECT * FROM expense_categories ORDER BY name")
+    fun expenseCategories(): Flow<List<ExpenseCategoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveExpenseCategory(value: ExpenseCategoryEntity)
+
+    @Query("UPDATE finance_transactions SET expenseCategoryId = NULL WHERE expenseCategoryId = :id")
+    suspend fun detachExpenseCategory(id: Int)
+
+    @Query("UPDATE payment_plans SET categoryId = NULL WHERE categoryId = :id")
+    suspend fun detachPlanCategory(id: Int)
+
+    @Query("DELETE FROM expense_categories WHERE id = :id")
+    suspend fun removeExpenseCategory(id: Int)
+
+    @Transaction
+    suspend fun deleteExpenseCategory(id: Int) {
+        detachExpenseCategory(id)
+        detachPlanCategory(id)
+        removeExpenseCategory(id)
+    }
+
+    @Query("SELECT * FROM payment_plans ORDER BY title")
+    fun paymentPlans(): Flow<List<PaymentPlanEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun savePaymentPlan(value: PaymentPlanEntity)
+
+    @Query("DELETE FROM payment_plans WHERE id = :id")
+    suspend fun deletePaymentPlan(id: Int)
+
     @Query("SELECT * FROM finance_transactions ORDER BY date DESC, id DESC")
     fun financeTransactions(): Flow<List<FinanceTransactionEntity>>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addFinanceTransaction(value: FinanceTransactionEntity)
+
+    @Query("UPDATE finance_transactions SET expenseCategoryId = :categoryId WHERE id = :id AND income = 0")
+    suspend fun setExpenseCategory(id: Int, categoryId: Int?)
 
     @Query("DELETE FROM finance_transactions WHERE id = :id")
     suspend fun deleteFinanceTransaction(id: Int)

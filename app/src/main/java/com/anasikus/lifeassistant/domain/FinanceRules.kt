@@ -6,7 +6,7 @@ import com.anasikus.lifeassistant.data.FinanceTransactionEntity
 import com.anasikus.lifeassistant.data.ShiftDayEntity
 import com.anasikus.lifeassistant.data.ShiftPatternEntity
 
-data class FinanceSource(val key: String, val name: String, val accrued: Long)
+data class FinanceSource(val key: String, val name: String, val accrued: Long, val plannedAdvance: Long? = null)
 
 data class FinanceTotals(
     val earned: Long,
@@ -34,29 +34,43 @@ object FinanceRules {
             add(FinanceSource("schedule", "График смен", accrued))
         }
 
-        val paidEvents = events.filter { it.hourlyRateCents != null || it.oneTimePaymentCents != null }
-        val firstEvent = (paidEvents.map { it.startDate } +
-            overrides.filter { override -> paidEvents.any { it.id == override.eventId } }.map { it.date }).minOrNull()
-        if (firstEvent != null) {
-            val accruedByEvent = CalendarEventRules.expand(paidEvents, firstEvent, today, overrides)
-                .distinctBy { it.event.id to it.occurrenceDate }
-                .filter { ended(it.instanceDate, it.instanceStartMinute, it.instanceDurationMinutes, today, minute) }
-                .groupBy { it.event.id }
-                .mapValues { (_, occurrences) ->
-                    occurrences.sumOf { occurrence ->
-                        occurrence.event.oneTimePaymentCents ?: ShiftRules.payment(
-                            ShiftDayEntity(
-                                date = occurrence.instanceDate,
-                                status = "WORK",
-                                durationMinutes = occurrence.instanceDurationMinutes,
-                                hourlyRateCents = occurrence.event.hourlyRateCents ?: 0L
+        val paidEvents = events.filter {
+            it.hourlyRateCents != null || it.oneTimePaymentCents != null || it.payAmountCents != null
+        }
+        val overridesByEvent = overrides.groupBy { it.eventId }
+        paidEvents.forEach { event ->
+            val exceptions = overridesByEvent[event.id].orEmpty()
+            val firstEvent = minOf(event.startDate, exceptions.minOfOrNull { it.date } ?: event.startDate)
+            val byOccurrence = exceptions.associateBy { it.occurrenceDate }
+            val instances = CalendarEventRules.expand(listOf(event), firstEvent, CalendarDateUtils.endOfMonth(today), exceptions)
+                .distinctBy { it.occurrenceDate }
+                .groupBy { it.instanceDate.take(7) }
+            val accrued = instances.values.sumOf { month ->
+                month.withIndex().sumOf { (index, occurrence) ->
+                    if (!ended(occurrence.instanceDate, occurrence.instanceStartMinute, occurrence.instanceDurationMinutes, today, minute)) {
+                        0L
+                    } else {
+                        val exception = byOccurrence[occurrence.occurrenceDate]
+                        val mode = WorkPay.from(exception?.payMode ?: event.payMode)
+                        val amount = exception?.payAmountCents ?: event.payAmountCents ?: event.hourlyRateCents ?: 0L
+                        event.oneTimePaymentCents ?: when (mode) {
+                            WorkPay.SHIFT -> amount
+                            WorkPay.ADVANCE -> 0L
+                            WorkPay.SALARY -> amount / month.size + if (index < amount % month.size) 1L else 0L
+                            WorkPay.HOURLY -> ShiftRules.payment(
+                                ShiftDayEntity(
+                                    date = occurrence.instanceDate,
+                                    status = "WORK",
+                                    durationMinutes = occurrence.instanceDurationMinutes,
+                                    hourlyRateCents = amount
+                                )
                             )
-                        )
+                        }
                     }
                 }
-            paidEvents.forEach { event ->
-                add(FinanceSource("event:${event.id}", event.title, accruedByEvent[event.id] ?: 0L))
             }
+            val advance = event.payAmountCents.takeIf { WorkPay.from(event.payMode) == WorkPay.ADVANCE }
+            add(FinanceSource("event:${event.id}", event.title, accrued, advance))
         }
     }
 

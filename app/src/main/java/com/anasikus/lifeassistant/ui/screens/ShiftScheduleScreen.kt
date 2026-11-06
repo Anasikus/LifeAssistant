@@ -35,7 +35,7 @@ internal fun ShiftScheduleScreen(
     val categories by viewModel.categories.collectAsState()
     val workCategories = categories.filter { it.kind == "WORK" || it.kind == "SIDE_JOB" }
     val work = events.filter { event ->
-        event.hourlyRateCents != null || event.oneTimePaymentCents != null ||
+        event.hourlyRateCents != null || event.payAmountCents != null || event.oneTimePaymentCents != null ||
             workCategories.any { it.id == event.categoryId }
     }
     var date by remember { mutableStateOf(initialDate) }
@@ -125,7 +125,7 @@ internal fun ShiftScheduleScreen(
                 editSeries = true,
                 defaultHourlyRateCents = pattern?.hourlyRateCents ?: 0L,
                 onDismiss = { showEditor = false },
-                onSave = { title, description, startDate, startMinute, duration, repeatMask, categoryId, amount ->
+                onSave = { title, description, startDate, startMinute, duration, repeatMask, categoryId, amount, payMode ->
                     val isWork = workCategories.find { it.id == categoryId }?.kind == "WORK"
                     val event = CalendarEventEntity(
                         id = current?.id ?: 0,
@@ -137,7 +137,8 @@ internal fun ShiftScheduleScreen(
                         repeatDaysMask = repeatMask,
                         categoryId = categoryId,
                         oneTimePaymentCents = if (isWork) null else amount,
-                        hourlyRateCents = if (isWork) amount else null
+                        payMode = if (isWork) payMode.name else null,
+                        payAmountCents = if (isWork) amount else null
                     )
                     if (current == null) viewModel.addEvent(event) else viewModel.updateEvent(event)
                     showEditor = false

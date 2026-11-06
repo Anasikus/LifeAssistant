@@ -19,7 +19,8 @@ data class CalendarEventOccurrence(
     /** Полное событие; date/start/duration выше описывают видимую часть дня. */
     val instanceDate: String = date,
     val instanceStartMinute: Int = startMinute,
-    val instanceDurationMinutes: Int = durationMinutes
+    val instanceDurationMinutes: Int = durationMinutes,
+    val plannedPayment: PlannedPayment? = null
 ) {
     fun withSegmentRange(range: TimelineRange): CalendarEventOccurrence {
         val totalStart = instanceStartMinute + range.startMinute - startMinute
@@ -82,7 +83,10 @@ object CalendarEventRules {
 
             // Добавляем исключения, перенесённые в диапазон из исходных дат за его пределами.
             eventOverrides.values
-                .filter { it.date >= CalendarDateUtils.addDays(rangeStart, -1) && it.date <= rangeEnd }
+                .filter {
+                    it.date != it.occurrenceDate &&
+                        it.date >= CalendarDateUtils.addDays(rangeStart, -1) && it.date <= rangeEnd
+                }
                 .forEach { candidateSourceDates.add(it.occurrenceDate) }
 
             candidateSourceDates.forEach sourceDateLoop@ { sourceDate ->

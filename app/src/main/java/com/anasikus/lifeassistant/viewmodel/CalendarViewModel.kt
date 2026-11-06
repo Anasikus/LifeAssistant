@@ -4,6 +4,8 @@ package com.anasikus.lifeassistant.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.anasikus.lifeassistant.data.ExpenseCategoryEntity
+import com.anasikus.lifeassistant.data.PaymentPlanEntity
 import com.anasikus.lifeassistant.data.FinanceTransactionEntity
 import com.anasikus.lifeassistant.data.CalendarEventEntity
 import com.anasikus.lifeassistant.data.CalendarEventOverrideEntity
@@ -49,8 +51,33 @@ class CalendarViewModel(
     val financeTransactions = repository.planning.financeTransactions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val expenseCategories = repository.planning.expenseCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val paymentPlans = repository.planning.paymentPlans()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun saveExpenseCategory(category: ExpenseCategoryEntity) {
+        viewModelScope.launch { repository.planning.saveExpenseCategory(category) }
+    }
+
+    fun deleteExpenseCategory(id: Int) {
+        viewModelScope.launch { repository.planning.deleteExpenseCategory(id) }
+    }
+
+    fun savePaymentPlan(plan: PaymentPlanEntity) {
+        viewModelScope.launch { repository.planning.savePaymentPlan(plan) }
+    }
+
+    fun deletePaymentPlan(id: Int) {
+        viewModelScope.launch { repository.planning.deletePaymentPlan(id) }
+    }
+
     fun addFinanceTransaction(value: FinanceTransactionEntity) {
         viewModelScope.launch { repository.planning.addFinanceTransaction(value) }
+    }
+
+    fun setExpenseCategory(id: Int, categoryId: Int?) {
+        viewModelScope.launch { repository.planning.setExpenseCategory(id, categoryId) }
     }
 
     fun deleteFinanceTransaction(id: Int) {
@@ -126,7 +153,7 @@ class CalendarViewModel(
 
     fun saveEditedOccurrence(
         event: CalendarEventEntity,
-        occurrence: CalendarEventOverrideEntity
+        occurrence: CalendarEventOverrideEntity?
     ) {
         viewModelScope.launch {
             repository.saveEditedOccurrence(event, occurrence)

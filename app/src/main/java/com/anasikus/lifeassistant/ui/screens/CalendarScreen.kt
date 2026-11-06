@@ -58,6 +58,9 @@ import com.anasikus.lifeassistant.data.TaskEntity
 import com.anasikus.lifeassistant.data.ShiftDayEntity
 import com.anasikus.lifeassistant.data.SpecialDateEntity
 import com.anasikus.lifeassistant.data.EventCategoryEntity
+import com.anasikus.lifeassistant.domain.PaymentPlanRules
+import com.anasikus.lifeassistant.ui.components.PaymentPlansDialog
+import com.anasikus.lifeassistant.domain.WorkPay
 import com.anasikus.lifeassistant.domain.ShiftRules
 import com.anasikus.lifeassistant.domain.CalendarDisplay
 import com.anasikus.lifeassistant.ui.components.CalendarPlanningDialog
@@ -98,6 +101,9 @@ fun CalendarScreen(
     val shiftPattern by viewModel.shiftPattern.collectAsState()
     val shiftDays by viewModel.shiftDays.collectAsState()
     val specialDates by viewModel.specialDates.collectAsState()
+    val paymentPlans by viewModel.paymentPlans.collectAsState()
+    val financeTransactions by viewModel.financeTransactions.collectAsState()
+    var paymentDialogDate by remember { mutableStateOf<String?>(null) }
     var showPlanningDialog by remember { mutableStateOf(false) }
     var showShifts by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
@@ -171,8 +177,24 @@ fun CalendarScreen(
             displayEnd
         )
     }
-    val displayEvents = remember(occurrences, shiftBlocks) {
-        (occurrences + shiftBlocks).sortedWith(compareBy({ it.date }, { it.startMinute }))
+    val paymentBlocks = remember(paymentPlans, financeTransactions, displayStart, displayEnd) {
+        val paid = financeTransactions.mapNotNull { it.planKey }.toSet()
+        paymentPlans.flatMap { PaymentPlanRules.between(it, displayStart, displayEnd) }
+            .mapIndexed { index, payment ->
+                val status = if (payment.key in paid) "Оплачено" else "Платёж"
+                val event = CalendarEventEntity(
+                    id = Int.MIN_VALUE + index,
+                    title = "$status · ${payment.plan.title}",
+                    description = ShiftRules.money(payment.plan.amountCents),
+                    startDate = payment.date,
+                    startMinute = 9 * 60,
+                    durationMinutes = 30
+                )
+                CalendarEventOccurrence(event, payment.date, plannedPayment = payment)
+            }
+    }
+    val displayEvents = remember(occurrences, shiftBlocks, paymentBlocks) {
+        (occurrences + shiftBlocks + paymentBlocks).sortedWith(compareBy({ it.date }, { it.startMinute }))
     }
     val scheduledTasks = remember(tasks, occurrences, shiftBlocks, effectiveShifts, placements, rangeStart, rangeEnd) {
         val tentativeDates = effectiveShifts.filter { it.predicted }.map { it.date }.toSet()
@@ -205,6 +227,10 @@ fun CalendarScreen(
     }
 
     fun openExistingEvent(occurrence: CalendarEventOccurrence) {
+        occurrence.plannedPayment?.let {
+            paymentDialogDate = it.date
+            return
+        }
         if (occurrence.event.id < 0) {
             showShifts = true
             return
@@ -242,6 +268,9 @@ fun CalendarScreen(
         startMinute: Int = occurrence.startMinute,
         durationMinutes: Int = occurrence.durationMinutes
     ) {
+        val previous = eventOverrides.find {
+            it.eventId == occurrence.event.id && it.occurrenceDate == occurrence.occurrenceDate
+        }
         val changed = occurrence.withSegmentRange(TimelineRange(startMinute, durationMinutes))
         viewModel.saveEventOverride(
             CalendarEventOverrideEntity(
@@ -250,7 +279,9 @@ fun CalendarScreen(
                 date = changed.instanceDate,
                 startMinute = changed.instanceStartMinute,
                 durationMinutes = changed.instanceDurationMinutes,
-                deleted = false
+                deleted = false,
+                payMode = previous?.payMode,
+                payAmountCents = previous?.payAmountCents
             )
         )
     }
@@ -288,6 +319,7 @@ fun CalendarScreen(
                     TextButton(onClick = { showSettingsMenu = true }) { Text("⋮", color = AppColors.Accent, fontSize = 22.sp) }
                     DropdownMenu(expanded = showSettingsMenu, onDismissRequest = { showSettingsMenu = false }) {
                         DropdownMenuItem(text = { Text("Категории и праздники") }, onClick = { showSettingsMenu = false; showPlanningDialog = true })
+                        DropdownMenuItem(text = { Text("Регулярные платежи") }, onClick = { showSettingsMenu = false; paymentDialogDate = anchorDate })
                         DropdownMenuItem(text = { Text("Шаг сетки") }, onClick = { showSettingsMenu = false; mode = CalendarViewMode.DAY; showGridControls = !showGridControls })
                     }
                 }
@@ -393,6 +425,8 @@ fun CalendarScreen(
                     WeekTasksContent(
                         dates = dates,
                         tasks = scheduledTasks,
+                        paymentBlocks = paymentBlocks,
+                        onPaymentClick = ::openExistingEvent,
                         shifts = effectiveShifts,
                         specialDates = specialDates,
                         onTaskClick = { taskForActions = it },
@@ -432,6 +466,9 @@ fun CalendarScreen(
         }
     }
 
+    paymentDialogDate?.let { date ->
+        PaymentPlansDialog(viewModel, date) { paymentDialogDate = null }
+    }
     if (showPlanningDialog) {
         CalendarPlanningDialog(viewModel, anchorDate) { showPlanningDialog = false }
     }
@@ -449,8 +486,13 @@ fun CalendarScreen(
         )
     } else if (showEventDialog) {
         val currentEvent = editingEvent
+        val editedOverride = eventOverrides.find {
+            it.eventId == currentEvent?.id && it.occurrenceDate == eventOccurrenceDate
+        }
         CalendarEventDialog(
             event = currentEvent,
+            initialPayMode = editedOverride?.payMode ?: currentEvent?.payMode,
+            initialPayAmount = editedOverride?.payAmountCents ?: currentEvent?.payAmountCents,
             creationHeader = if (currentEvent == null) ({ CalendarCreationTabs(false) { createTask = it } }) else null,
             initialDate = eventInitialDate,
             initialStartMinute = eventInitialMinute,
@@ -458,7 +500,7 @@ fun CalendarScreen(
             categories = categories,
             defaultHourlyRateCents = shiftPattern?.hourlyRateCents ?: 0,
             onDismiss = { showEventDialog = false },
-            onSave = { title, description, date, startMinute, durationMinutes, repeatDaysMask, categoryId, amountCents ->
+            onSave = { title, description, date, startMinute, durationMinutes, repeatDaysMask, categoryId, amountCents, payMode ->
                 val kind = categories.find { it.id == categoryId }?.kind
                 if (currentEvent == null) {
                     viewModel.addEvent(
@@ -471,28 +513,40 @@ fun CalendarScreen(
                             repeatDaysMask = repeatDaysMask,
                             categoryId = categoryId,
                             oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else null,
-                            hourlyRateCents = if (kind == "WORK") amountCents else null
+                            payMode = if (kind == "WORK") payMode.name else null,
+                            payAmountCents = if (kind == "WORK") amountCents else null
                         )
                     )
                 } else {
-                    // Та же запись экземпляра, которую меняет перетаскивание.
-                    // Иначе старое исключение перекроет новое время из формы.
+                    val replaceBaseSchedule = currentEvent.repeatDaysMask == 0 || repeatDaysMask == 0
+                    val editBasePay = replaceBaseSchedule || currentEvent.categoryId != categoryId
+                    val keepOrphanPay = categoryId == null && currentEvent.categoryId == null
+                    val baseMode = WorkPay.from(currentEvent.payMode)
+                    val baseAmount = currentEvent.payAmountCents ?: currentEvent.hourlyRateCents
+                    val customPay = kind == "WORK" && !editBasePay && (baseMode != payMode || baseAmount != amountCents)
+                    val anchor = if (replaceBaseSchedule) date else currentEvent.startDate
                     viewModel.saveEditedOccurrence(
                         event = currentEvent.copy(
                             title = title,
                             description = description,
+                            startDate = anchor,
+                            startMinute = if (replaceBaseSchedule) startMinute else currentEvent.startMinute,
+                            durationMinutes = if (replaceBaseSchedule) durationMinutes else currentEvent.durationMinutes,
                             repeatDaysMask = repeatDaysMask,
                             categoryId = categoryId,
                             oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else if (categoryId == null && currentEvent.categoryId == null) currentEvent.oneTimePaymentCents else null,
-                            hourlyRateCents = if (kind == "WORK") amountCents else if (categoryId == null && currentEvent.categoryId == null) currentEvent.hourlyRateCents else null
+                            hourlyRateCents = if (kind == "WORK" && !editBasePay || categoryId == null && currentEvent.categoryId == null) currentEvent.hourlyRateCents else null,
+                            payMode = if (kind == "WORK" && editBasePay) payMode.name else if (!editBasePay || keepOrphanPay) currentEvent.payMode else null,
+                            payAmountCents = if (kind == "WORK" && editBasePay) amountCents else if (!editBasePay || keepOrphanPay) currentEvent.payAmountCents else null
                         ),
-                        occurrence = CalendarEventOverrideEntity(
+                        occurrence = if (replaceBaseSchedule) null else CalendarEventOverrideEntity(
                             eventId = currentEvent.id,
                             occurrenceDate = eventOccurrenceDate,
                             date = date,
                             startMinute = startMinute,
                             durationMinutes = durationMinutes,
-                            deleted = false
+                            payMode = if (customPay) payMode.name else null,
+                            payAmountCents = if (customPay) amountCents else null
                         )
                     )
                 }
@@ -922,6 +976,8 @@ private fun ScheduleTimeline(
 private fun WeekTasksContent(
     dates: List<String>,
     tasks: List<ScheduledTask>,
+    paymentBlocks: List<CalendarEventOccurrence>,
+    onPaymentClick: (CalendarEventOccurrence) -> Unit,
     shifts: List<ShiftDayEntity>,
     specialDates: List<SpecialDateEntity>,
     onTaskClick: (ScheduledTask) -> Unit,
@@ -950,6 +1006,9 @@ private fun WeekTasksContent(
                     )
                     shift?.let { Text(shiftStatus(it.status) + if (it.predicted) " · предположение ?" else "", color = shiftColor(it.status), fontSize = 12.sp) }
                     ShiftRules.specialDatesFor(date, specialDates).forEach { Text("★ ${it.title}", color = AppColors.Yellow, fontSize = 12.sp) }
+                    paymentBlocks.filter { it.date == date }.forEach { payment ->
+                        TextButton(onClick = { onPaymentClick(payment) }) { Text(payment.event.title, color = AppColors.Accent) }
+                    }
                     if (dayTasks.isEmpty()) {
                         Text("Нет запланированных задач", color = AppColors.SecondaryText, fontSize = 12.sp)
                     } else {
@@ -1037,7 +1096,9 @@ private fun MonthEventsContent(
                 val dayEvents = eventsOnDay.size
                 val dayTasks = tasksByDate[date].orEmpty().size
                 val hasWork = eventsOnDay.any { occurrence ->
-                    occurrence.event.id < 0 || occurrence.event.hourlyRateCents != null ||
+                    (occurrence.event.id < 0 && occurrence.plannedPayment == null) ||
+                        occurrence.event.hourlyRateCents != null ||
+                        occurrence.event.payAmountCents != null ||
                         categories.any { it.id == occurrence.event.categoryId && it.kind == "WORK" }
                 }
                 val dayShift = shifts.find { it.date == date }

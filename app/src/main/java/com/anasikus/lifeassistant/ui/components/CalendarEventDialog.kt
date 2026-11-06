@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.anasikus.lifeassistant.data.CalendarEventEntity
 import com.anasikus.lifeassistant.data.EventCategoryEntity
 import com.anasikus.lifeassistant.domain.CalendarDisplay
+import com.anasikus.lifeassistant.domain.WorkPay
 import com.anasikus.lifeassistant.domain.ShiftRules
 import com.anasikus.lifeassistant.domain.CalendarDateUtils
 import com.anasikus.lifeassistant.ui.AppColors
@@ -58,7 +59,8 @@ fun CalendarEventDialog(
         durationMinutes: Int,
         repeatDaysMask: Int,
         categoryId: Int?,
-        amountCents: Long?
+        amountCents: Long?,
+        payMode: WorkPay
     ) -> Unit,
     onDeleteOccurrence: (() -> Unit)? = null,
     onDeleteAll: (() -> Unit)? = null,
@@ -67,7 +69,9 @@ fun CalendarEventDialog(
     initialCategoryId: Int? = event?.categoryId,
     requireCategory: Boolean = false,
     editSeries: Boolean = false,
-    creationHeader: (@Composable () -> Unit)? = null
+    creationHeader: (@Composable () -> Unit)? = null,
+    initialPayMode: String? = event?.payMode,
+    initialPayAmount: Long? = event?.payAmountCents
 ) {
     val context = LocalContext.current
 
@@ -87,8 +91,10 @@ fun CalendarEventDialog(
     var categoryId by remember(event?.id) { mutableStateOf(initialCategoryId) }
     var categoryMenu by remember { mutableStateOf(false) }
     val selectedCategory = categories.find { it.id == categoryId }
-    var amount by remember(event?.id, selectedCategory?.kind) {
-        mutableStateOf(java.math.BigDecimal.valueOf(if (selectedCategory?.kind == "WORK") (event?.hourlyRateCents ?: defaultHourlyRateCents) else event?.oneTimePaymentCents ?: 0, 2).toPlainString())
+    var payMode by remember(event?.id, initialPayMode) { mutableStateOf(WorkPay.from(initialPayMode)) }
+    var payMenu by remember { mutableStateOf(false) }
+    var amount by remember(event?.id, selectedCategory?.kind, initialPayAmount) {
+        mutableStateOf(java.math.BigDecimal.valueOf(if (selectedCategory?.kind == "WORK") (initialPayAmount ?: event?.hourlyRateCents ?: defaultHourlyRateCents) else event?.oneTimePaymentCents ?: 0, 2).toPlainString())
     }
     var titleError by remember(event?.id) { mutableStateOf(false) }
     var showDeleteOptions by remember(event?.id) { mutableStateOf(false) }
@@ -156,12 +162,50 @@ fun CalendarEventDialog(
                         }
                     }
                 }
-                if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) {
-                    OutlinedTextField(value = amount, onValueChange = { amount = it }, modifier = Modifier.fillMaxWidth(),
-                        label = { Text(if (selectedCategory?.kind == "WORK") "Почасовая ставка, ₽" else "Разовая выплата, ₽") }, colors = fieldColors, singleLine = true)
-                }
                 if (selectedCategory?.kind == "WORK") {
-                    Text("Работа появится в расписании на все выбранные дни недели. Ставка используется в финансах.", color = AppColors.SecondaryText, fontSize = 12.sp)
+                    Box {
+                        OutlinedButton(onClick = { payMenu = true }) {
+                            Text(payMode.label, color = AppColors.MainText)
+                        }
+                        DropdownMenu(expanded = payMenu, onDismissRequest = { payMenu = false }) {
+                            WorkPay.entries.forEach { mode ->
+                                DropdownMenuItem(text = { Text(mode.label) }, onClick = { payMode = mode; payMenu = false })
+                            }
+                        }
+                    }
+                    if (payMode == WorkPay.ADVANCE) {
+                        Text("Плановая сумма аванса. Получение отметь в «Финансы → Доход».", color = AppColors.SecondaryText)
+                    }
+                    if (payMode == WorkPay.SALARY) {
+                        Text("Укажи зарплату за месяц. Она начисляется по доле завершённых смен месяца.", color = AppColors.SecondaryText)
+                    }
+                    if (!editSeries && (event?.repeatDaysMask ?: 0) != 0) {
+                        Text("Изменение оплаты здесь относится к выбранной смене.", color = AppColors.SecondaryText)
+                    }
+                }
+                if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(if (selectedCategory?.kind == "WORK") "${payMode.label}, ₽" else "Разовая выплата, ₽") },
+                        colors = fieldColors,
+                        singleLine = true
+                    )
+                }
+
+                if (selectedCategory?.kind == "WORK") {
+                    val cents = ShiftRules.cents(amount)
+                    val shiftTotal = when (payMode) {
+                        WorkPay.HOURLY -> cents?.let {
+                            ShiftRules.payment(com.anasikus.lifeassistant.data.ShiftDayEntity(
+                                date = date, status = "WORK", durationMinutes = durationMinutes, hourlyRateCents = it
+                            ))
+                        }
+                        WorkPay.SHIFT -> cents
+                        WorkPay.ADVANCE, WorkPay.SALARY -> null
+                    }
+                    shiftTotal?.let { Text("За эту смену · ${ShiftRules.money(it)}", color = AppColors.MainText) }
                 }
 
                 if (selectedCategory?.kind == "HOLIDAY") {
@@ -270,7 +314,10 @@ fun CalendarEventDialog(
                     fontSize = 11.sp
                 )
 
-                calendarWeekDays.indices.toList().chunked(4).forEach { indexes ->
+                TextButton(onClick = { repeatDaysMask = if (repeatDaysMask == 127) 0 else 127 }) {
+                    Text(if (repeatDaysMask == 127) "Каждый день ✓" else "Повторять каждый день", color = AppColors.Accent)
+                }
+                calendarWeekDays.indices.toList().chunked(2).forEach { indexes ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -326,7 +373,8 @@ fun CalendarEventDialog(
                             durationMinutes,
                             repeatDaysMask,
                             categoryId,
-                            if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) ShiftRules.cents(amount) else null
+                            if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) ShiftRules.cents(amount) else null,
+                            payMode
                         )
                     }
                 }
