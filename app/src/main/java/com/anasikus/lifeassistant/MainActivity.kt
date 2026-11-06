@@ -22,6 +22,8 @@ import com.anasikus.lifeassistant.ui.AppColors
 import com.anasikus.lifeassistant.ui.navigation.AppDestination
 import com.anasikus.lifeassistant.ui.navigation.BottomNavigationBar
 import com.anasikus.lifeassistant.ui.screens.CalendarScreen
+import com.anasikus.lifeassistant.ui.screens.ShiftScheduleScreen
+import com.anasikus.lifeassistant.ui.screens.FinanceScreen
 import com.anasikus.lifeassistant.ui.screens.FeaturePlaceholderScreen
 import com.anasikus.lifeassistant.ui.screens.TasksScreen
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
@@ -108,13 +110,9 @@ fun AssistantScreen(
                 )
             }
 
-            AppDestination.FINANCE -> {
-                FeaturePlaceholderScreen(
-                    title = "Финансы",
-                    description = "Учитывай доходы и расходы, планируй бюджет и отслеживай свои траты.",
-                    modifier = screenModifier
-                )
-            }
+            AppDestination.SHIFTS -> ShiftScheduleScreen(calendarViewModel, screenModifier)
+
+            AppDestination.FINANCE -> FinanceScreen(calendarViewModel, screenModifier)
 
             AppDestination.LECTURES -> {
                 FeaturePlaceholderScreen(

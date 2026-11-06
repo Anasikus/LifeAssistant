@@ -147,7 +147,7 @@ fun CalendarScreen(
     val shiftBlocks = remember(effectiveShifts, rangeStart, rangeEnd) {
         CalendarEventRules.expand(
             effectiveShifts.filter { it.status == "WORK" && !it.predicted }.mapIndexed { index, day ->
-                CalendarEventEntity(id = -index - 1, title = "Смена", startDate = day.date, startMinute = day.startMinute, durationMinutes = day.durationMinutes)
+                CalendarEventEntity(id = -index - 1, title = "Работа · смена", startDate = day.date, startMinute = day.startMinute, durationMinutes = day.durationMinutes)
             }, rangeStart, rangeEnd
         )
     }
@@ -315,7 +315,7 @@ fun CalendarScreen(
                 }
             }
 
-            TextButton(onClick = { showPlanningDialog = true }) { Text("Категории и график смен", color = AppColors.Accent) }
+            TextButton(onClick = { showPlanningDialog = true }) { Text("Категории и праздники", color = AppColors.Accent) }
             effectiveShifts.find { it.date == anchorDate }?.let { day ->
                 Text(
                     "${shiftStatus(day.status)}${if (day.predicted) " · предположение ?" else ""}" +
@@ -327,12 +327,6 @@ fun CalendarScreen(
                 val holidays = ShiftRules.specialDatesFor(anchorDate, specialDates)
                 if (holidays.isNotEmpty()) Text("★ " + holidays.joinToString(" · ") { it.title }, color = AppColors.Yellow, fontSize = 12.sp, maxLines = 2)
             }
-            if (mode == CalendarViewMode.MONTH) {
-                val shiftIncome = effectiveShifts.filter { it.date in rangeStart..rangeEnd && !it.predicted }.sumOf { ShiftRules.payment(it) }
-                val sideIncome = occurrences.filter { it.instanceDate in rangeStart..rangeEnd }.distinctBy { it.event.id to it.occurrenceDate }.sumOf { it.event.oneTimePaymentCents ?: 0L }
-                Text("Плановый доход без предположений: ${ShiftRules.money(shiftIncome + sideIncome)}", color = AppColors.SecondaryText, fontSize = 12.sp)
-            }
-
             OutlinedButton(
                 onClick = { openNewEvent(anchorDate, 9 * 60) },
                 modifier = Modifier.fillMaxWidth()
@@ -345,7 +339,7 @@ fun CalendarScreen(
                     ScheduleTimeline(
                         date = anchorDate,
                         intervalMinutes = intervalMinutes,
-                        occurrences = occurrences.filter { it.date == anchorDate },
+                        occurrences = (occurrences + shiftBlocks).filter { it.date == anchorDate },
                         tasks = scheduledTasks.filter { it.date == anchorDate },
                         onAddEvent = ::openNewEvent,
                         onEventClick = ::openExistingEvent,
@@ -414,12 +408,7 @@ fun CalendarScreen(
             onDismiss = { showEventDialog = false },
             onSave = { title, description, date, startMinute, durationMinutes, repeatDaysMask, categoryId, amountCents ->
                 val kind = categories.find { it.id == categoryId }?.kind
-                if (kind == "WORK") {
-                    viewModel.moveEventToShift(
-                        ShiftDayEntity(date, "WORK", startMinute, durationMinutes, amountCents ?: 0),
-                        currentEvent, eventOccurrenceDate
-                    )
-                } else if (currentEvent == null) {
+                if (currentEvent == null) {
                     viewModel.addEvent(
                         CalendarEventEntity(
                             title = title,
@@ -429,7 +418,8 @@ fun CalendarScreen(
                             durationMinutes = durationMinutes,
                             repeatDaysMask = repeatDaysMask,
                             categoryId = categoryId,
-                            oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else null
+                            oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else null,
+                            hourlyRateCents = if (kind == "WORK") amountCents else null
                         )
                     )
                 } else {
@@ -441,7 +431,8 @@ fun CalendarScreen(
                             description = description,
                             repeatDaysMask = repeatDaysMask,
                             categoryId = categoryId,
-                            oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else null
+                            oneTimePaymentCents = if (kind == "SIDE_JOB") amountCents else if (categoryId == null && currentEvent.categoryId == null) currentEvent.oneTimePaymentCents else null,
+                            hourlyRateCents = if (kind == "WORK") amountCents else if (categoryId == null && currentEvent.categoryId == null) currentEvent.hourlyRateCents else null
                         ),
                         occurrence = CalendarEventOverrideEntity(
                             eventId = currentEvent.id,
@@ -842,6 +833,7 @@ private fun ScheduleTimeline(
                             lane = block.lane,
                             color = block.task?.let { taskPriorityColor(it.priority).copy(alpha = 0.20f) }
                                 ?: AppColors.Card,
+                            editable = block.event?.event?.id?.let { it > 0 } ?: true,
                             onClick = { displayedRange ->
                                 block.event?.let {
                                     onEventClick(it.withSegmentRange(displayedRange))
@@ -1072,7 +1064,6 @@ private fun EventListCard(
                 fontSize = 12.sp
             )
             categoryName?.let { Text(it, color = AppColors.Accent, fontSize = 12.sp) }
-            occurrence.event.oneTimePaymentCents?.let { Text("Разовая выплата: ${ShiftRules.money(it)}", color = AppColors.Green, fontSize = 12.sp) }
             if (occurrence.event.description.isNotBlank()) {
                 Text(occurrence.event.description, color = AppColors.SecondaryText, fontSize = 12.sp)
             }

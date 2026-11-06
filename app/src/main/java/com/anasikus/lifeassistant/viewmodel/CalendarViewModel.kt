@@ -4,6 +4,7 @@ package com.anasikus.lifeassistant.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.anasikus.lifeassistant.data.FinanceTransactionEntity
 import com.anasikus.lifeassistant.data.CalendarEventEntity
 import com.anasikus.lifeassistant.data.CalendarEventOverrideEntity
 import com.anasikus.lifeassistant.data.CalendarTaskPlacementEntity
@@ -45,9 +46,17 @@ class CalendarViewModel(
     val planningMessage = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     val importing = kotlinx.coroutines.flow.MutableStateFlow(false)
 
-    fun moveEventToShift(day: com.anasikus.lifeassistant.data.ShiftDayEntity, event: CalendarEventEntity?, occurrenceDate: String) {
-        viewModelScope.launch { repository.planning.moveEventToShift(day, event, occurrenceDate) }
+    val financeTransactions = repository.planning.financeTransactions()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addFinanceTransaction(value: FinanceTransactionEntity) {
+        viewModelScope.launch { repository.planning.addFinanceTransaction(value) }
     }
+
+    fun deleteFinanceTransaction(id: Int) {
+        viewModelScope.launch { repository.planning.deleteFinanceTransaction(id) }
+    }
+
     fun saveCategory(value: com.anasikus.lifeassistant.data.EventCategoryEntity) {
         viewModelScope.launch { repository.planning.saveCategory(value) }
     }

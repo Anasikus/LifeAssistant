@@ -17,9 +17,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EventCategoryEntity::class,
         ShiftPatternEntity::class,
         ShiftDayEntity::class,
-        SpecialDateEntity::class
+        SpecialDateEntity::class,
+        FinanceTransactionEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -132,6 +133,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE calendar_events ADD COLUMN hourlyRateCents INTEGER")
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS finance_transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        date TEXT NOT NULL,
+                        income INTEGER NOT NULL,
+                        amountCents INTEGER NOT NULL,
+                        note TEXT NOT NULL,
+                        sourceKey TEXT,
+                        sourceName TEXT
+                    )""".trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -150,7 +168,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2,
                         MIGRATION_2_3,
                         MIGRATION_3_4,
-                        MIGRATION_4_5
+                        MIGRATION_4_5,
+                        MIGRATION_5_6
                         )
                     .build()
                     .also {

@@ -6,6 +6,7 @@ enum class AppDestination(
 ) {
     TASKS("Задачи", "✓"),
     CALENDAR("Календарь", "▦"),
+    SHIFTS("Смены", "◷"),
     FINANCE("Финансы", "₽"),
     LECTURES("Лекции", "▤")
 }

@@ -21,8 +21,6 @@ import java.util.Calendar
 @Composable
 fun CalendarPlanningDialog(viewModel: CalendarViewModel, selectedDate: String, onDismiss: () -> Unit) {
     val categories by viewModel.categories.collectAsState()
-    val pattern by viewModel.shiftPattern.collectAsState()
-    val shifts by viewModel.shiftDays.collectAsState()
     val dates by viewModel.specialDates.collectAsState()
     val message by viewModel.planningMessage.collectAsState()
     val importing by viewModel.importing.collectAsState()
@@ -35,14 +33,13 @@ fun CalendarPlanningDialog(viewModel: CalendarViewModel, selectedDate: String, o
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row {
-                    listOf("Категории", "Смены", "Праздники").forEachIndexed { index, label ->
+                    listOf("Категории", "Праздники").forEachIndexed { index, label ->
                         TextButton(onClick = { tab = index }) { Text(label, color = if (tab == index) AppColors.Accent else AppColors.SecondaryText, fontSize = 11.sp) }
                     }
                 }
                 when (tab) {
                     0 -> CategorySettings(categories, viewModel::saveCategory, viewModel::deleteCategory)
-                    1 -> ShiftSettings(selectedDate, pattern, shifts, viewModel)
-                    2 -> SpecialDateSettings(selectedDate, dates, importing, message, viewModel)
+                    1 -> SpecialDateSettings(selectedDate, dates, importing, message, viewModel)
                 }
             }
         },
@@ -86,7 +83,7 @@ private fun CategorySettings(categories: List<EventCategoryEntity>, onSave: (Eve
 }
 
 @Composable
-private fun ShiftSettings(date: String, pattern: ShiftPatternEntity?, shifts: List<ShiftDayEntity>, viewModel: CalendarViewModel) {
+internal fun ShiftSettings(date: String, pattern: ShiftPatternEntity?, shifts: List<ShiftDayEntity>, viewModel: CalendarViewModel) {
     var tab by remember { mutableStateOf(0) }
     Row {
         listOf("Шаблон", "День", "Прогноз").forEachIndexed { index, label ->

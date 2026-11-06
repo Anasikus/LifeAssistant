@@ -9,6 +9,16 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CalendarPlanningDao {
+    @Query("SELECT * FROM finance_transactions ORDER BY date DESC, id DESC")
+    fun financeTransactions(): Flow<List<FinanceTransactionEntity>>
+
+    @Insert
+    suspend fun addFinanceTransaction(value: FinanceTransactionEntity)
+
+    @Query("DELETE FROM finance_transactions WHERE id = :id")
+    suspend fun deleteFinanceTransaction(id: Int)
+
+
     @Query("SELECT * FROM event_categories ORDER BY id")
     fun categories(): Flow<List<EventCategoryEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE)

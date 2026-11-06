@@ -50,7 +50,8 @@ fun CalendarTimelineCard(
     lane: Int,
     color: Color,
     onClick: (TimelineRange) -> Unit,
-    onSave: (TimelineRange) -> Unit
+    onSave: (TimelineRange) -> Unit,
+    editable: Boolean = true
 ) {
     val density = LocalDensity.current
     // Объект MutableState должен оставаться тем же: pointerInput живёт дольше
@@ -86,7 +87,8 @@ fun CalendarTimelineCard(
                     .weight(1f)
                     .fillMaxWidth()
                     .testTag("calendar-body-$itemKey")
-                    .pointerInput(itemKey, density) {
+                    .pointerInput(itemKey, density, editable) {
+                        if (!editable) return@pointerInput
                         var origin = preview
                         var totalPx = 0f
                         detectDragGesturesAfterLongPress(
@@ -110,7 +112,8 @@ fun CalendarTimelineCard(
                             onDragCancel = { preview = origin; interacting = false }
                         )
                     }
-                    .pointerInput(itemKey) {
+                    .pointerInput(itemKey, editable) {
+                        if (!editable) return@pointerInput
                         detectTapGestures(onTap = { currentClick(preview) })
                     }
                     .padding(horizontal = 5.dp, vertical = 3.dp)
@@ -138,7 +141,7 @@ fun CalendarTimelineCard(
                 )
                 Spacer(Modifier.weight(1f))
             }
-            Box(
+            if (editable) Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(14.dp)

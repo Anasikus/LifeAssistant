@@ -63,7 +63,10 @@ fun CalendarEventDialog(
     onDeleteOccurrence: (() -> Unit)? = null,
     onDeleteAll: (() -> Unit)? = null,
     categories: List<EventCategoryEntity> = emptyList(),
-    defaultHourlyRateCents: Long = 0
+    defaultHourlyRateCents: Long = 0,
+    initialCategoryId: Int? = event?.categoryId,
+    requireCategory: Boolean = false,
+    editSeries: Boolean = false
 ) {
     val context = LocalContext.current
 
@@ -80,11 +83,11 @@ fun CalendarEventDialog(
     var repeatDaysMask by remember(event?.id) {
         mutableStateOf(event?.repeatDaysMask ?: 0)
     }
-    var categoryId by remember(event?.id) { mutableStateOf(event?.categoryId) }
+    var categoryId by remember(event?.id) { mutableStateOf(initialCategoryId) }
     var categoryMenu by remember { mutableStateOf(false) }
     val selectedCategory = categories.find { it.id == categoryId }
     var amount by remember(event?.id, selectedCategory?.kind) {
-        mutableStateOf(java.math.BigDecimal.valueOf(if (selectedCategory?.kind == "WORK") defaultHourlyRateCents else event?.oneTimePaymentCents ?: 0, 2).toPlainString())
+        mutableStateOf(java.math.BigDecimal.valueOf(if (selectedCategory?.kind == "WORK") (event?.hourlyRateCents ?: defaultHourlyRateCents) else event?.oneTimePaymentCents ?: 0, 2).toPlainString())
     }
     var titleError by remember(event?.id) { mutableStateOf(false) }
     var showDeleteOptions by remember(event?.id) { mutableStateOf(false) }
@@ -146,7 +149,7 @@ fun CalendarEventDialog(
                 Box {
                     OutlinedButton(onClick = { categoryMenu = true }) { Text("Категория: ${selectedCategory?.name ?: "Без категории"}", color = AppColors.MainText) }
                     DropdownMenu(expanded = categoryMenu, onDismissRequest = { categoryMenu = false }) {
-                        DropdownMenuItem(text = { Text("Без категории") }, onClick = { categoryId = null; categoryMenu = false })
+                        if (!requireCategory) DropdownMenuItem(text = { Text("Без категории") }, onClick = { categoryId = null; categoryMenu = false })
                         categories.forEach { category ->
                             DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; categoryMenu = false })
                         }
@@ -157,11 +160,11 @@ fun CalendarEventDialog(
                         label = { Text(if (selectedCategory?.kind == "WORK") "Почасовая ставка, ₽" else "Разовая выплата, ₽") }, colors = fieldColors, singleLine = true)
                 }
                 if (selectedCategory?.kind == "WORK") {
-                    Text("Сохранение перенесёт выбранный день в график смен, без карточки мероприятия. Для повторяющегося графика используй «Категории и график → Смены».", color = AppColors.Yellow, fontSize = 12.sp)
+                    Text("Работа появится в расписании на все выбранные дни недели. Ставка используется в финансах.", color = AppColors.SecondaryText, fontSize = 12.sp)
                 }
 
                 if (selectedCategory?.kind == "HOLIDAY") {
-                    Text("Ежегодные дни рождения и годовщины добавляй в «Категории и график → Праздники». Здесь создаётся мероприятие со временем.", color = AppColors.SecondaryText, fontSize = 11.sp)
+                    Text("Ежегодные дни рождения и годовщины добавляй в «Категории и праздники → Праздники». Здесь создаётся мероприятие со временем.", color = AppColors.SecondaryText, fontSize = 11.sp)
                 }
                 if (selectedCategory?.kind == "SIDE_JOB" && repeatDaysMask != 0) {
                     Text("Выплата планируется за каждое повторение подработки.", color = AppColors.SecondaryText, fontSize = 11.sp)
@@ -217,7 +220,7 @@ fun CalendarEventDialog(
                 Text(CalendarDisplay.interval(startMinute, durationMinutes), color = AppColors.MainText)
                 Text("Если окончание раньше начала, оно относится к следующему дню. Одинаковое время означает 24 часа.", color = AppColors.SecondaryText, fontSize = 11.sp)
                 timeError?.let { Text(it, color = AppColors.Red, fontSize = 12.sp) }
-                if (event != null && event.repeatDaysMask != 0) {
+                if (!editSeries && event != null && event.repeatDaysMask != 0) {
                     Text(
                         "Дата и время меняются для выбранного повторения. Название, описание и дни недели — для всей серии.",
                         color = AppColors.SecondaryText,
@@ -309,6 +312,8 @@ fun CalendarEventDialog(
                         titleError = true
                     } else if (durationMinutes !in 15..1440) {
                         timeError = "Выбери длительность от 15 минут до 24 часов."
+                    } else if (requireCategory && selectedCategory == null) {
+                        timeError = "Выбери категорию работы или подработки."
                     } else if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB") && ShiftRules.cents(amount) == null) {
                         timeError = "Введи неотрицательную сумму с точностью до копеек."
                     } else {
@@ -330,7 +335,7 @@ fun CalendarEventDialog(
         },
         dismissButton = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (event != null && onDeleteOccurrence != null && onDeleteAll != null) {
+                if (event != null && (editSeries || onDeleteOccurrence != null) && onDeleteAll != null) {
                     TextButton(onClick = { showDeleteOptions = true }) {
                         Text("Удалить", color = AppColors.Red)
                     }
@@ -342,7 +347,7 @@ fun CalendarEventDialog(
         }
     )
 
-    if (showDeleteOptions && event != null && onDeleteOccurrence != null && onDeleteAll != null) {
+    if (showDeleteOptions && event != null && (editSeries || onDeleteOccurrence != null) && onDeleteAll != null) {
         AlertDialog(
             onDismissRequest = { showDeleteOptions = false },
             containerColor = AppColors.Card,
@@ -351,6 +356,8 @@ fun CalendarEventDialog(
                 Text(
                     text = if (event.repeatDaysMask == 0) {
                         "Удалить это мероприятие?"
+                    } else if (editSeries) {
+                        "Удалить всю серию смен?"
                     } else {
                         "Удалить только выбранный день или все повторения?"
                     },
@@ -358,16 +365,16 @@ fun CalendarEventDialog(
                 )
             },
             confirmButton = {
-                TextButton(onClick = onDeleteOccurrence) {
+                TextButton(onClick = { if (editSeries) onDeleteAll() else onDeleteOccurrence?.invoke() }) {
                     Text(
-                        text = if (event.repeatDaysMask == 0) "Удалить" else "Только этот день",
+                        text = if (editSeries || event.repeatDaysMask == 0) "Удалить" else "Только этот день",
                         color = AppColors.Accent
                     )
                 }
             },
             dismissButton = {
                 Row {
-                    if (event.repeatDaysMask != 0) {
+                    if (!editSeries && event.repeatDaysMask != 0) {
                         TextButton(onClick = onDeleteAll) {
                             Text("Всю серию", color = AppColors.Red)
                         }
