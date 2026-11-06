@@ -66,7 +66,8 @@ fun CalendarEventDialog(
     defaultHourlyRateCents: Long = 0,
     initialCategoryId: Int? = event?.categoryId,
     requireCategory: Boolean = false,
-    editSeries: Boolean = false
+    editSeries: Boolean = false,
+    creationHeader: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -110,7 +111,7 @@ fun CalendarEventDialog(
         titleContentColor = AppColors.MainText,
         textContentColor = AppColors.SecondaryText,
         title = {
-            Text(
+            if (creationHeader != null) creationHeader() else Text(
                 text = if (event == null) "Новое мероприятие" else "Редактирование мероприятия",
                 fontWeight = FontWeight.Bold
             )

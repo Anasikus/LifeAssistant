@@ -34,7 +34,9 @@ import java.util.Locale
 fun TaskEditorDialog(
     task: TaskEntity?,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String) -> Unit
+    onSave: (String, String, String, String) -> Unit,
+    initialDate: String = TaskRules.today(),
+    creationHeader: (@Composable () -> Unit)? = null
 ) {
     var title by remember(task?.id) {
         mutableStateOf(task?.title.orEmpty())
@@ -47,14 +49,14 @@ fun TaskEditorDialog(
     var startDate by remember(task?.id) {
         mutableStateOf(
             task?.startDate?.takeIf { it.isNotBlank() }
-                ?: TaskRules.today()
+                ?: initialDate
         )
     }
 
     var deadline by remember(task?.id) {
         mutableStateOf(
             task?.deadline?.takeIf { it.isNotBlank() }
-                ?: TaskRules.today()
+                ?: initialDate
         )
     }
 
@@ -130,7 +132,7 @@ fun TaskEditorDialog(
         titleContentColor = AppColors.MainText,
         textContentColor = AppColors.SecondaryText,
         title = {
-            Text(
+            if (creationHeader != null) creationHeader() else Text(
                 text = if (task == null) {
                     "Новая задача"
                 } else {

@@ -21,7 +21,13 @@ import com.anasikus.lifeassistant.ui.components.shiftStatus
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
 
 @Composable
-fun ShiftScheduleScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
+internal fun ShiftScheduleScreen(
+    viewModel: CalendarViewModel,
+    initialDate: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.activity.compose.BackHandler(onBack = onBack)
     val pattern by viewModel.shiftPattern.collectAsState()
     val days by viewModel.shiftDays.collectAsState()
     val events by viewModel.events.collectAsState()
@@ -32,7 +38,7 @@ fun ShiftScheduleScreen(viewModel: CalendarViewModel, modifier: Modifier = Modif
         event.hourlyRateCents != null || event.oneTimePaymentCents != null ||
             workCategories.any { it.id == event.categoryId }
     }
-    var date by remember { mutableStateOf(CalendarDateUtils.today()) }
+    var date by remember { mutableStateOf(initialDate) }
     var showSettings by remember { mutableStateOf(false) }
     var showEditor by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CalendarEventEntity?>(null) }
@@ -49,6 +55,7 @@ fun ShiftScheduleScreen(viewModel: CalendarViewModel, modifier: Modifier = Modif
             modifier.background(AppColors.Background).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            TextButton(onClick = onBack) { Text("‹ К календарю") }
             Text("График смен", style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText)
             PlanningDateField("Месяц и выбранный день", date) { date = it }
             Button(onClick = { showSettings = true }) { Text("Шаблон, отметки дня и прогноз") }

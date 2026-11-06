@@ -22,7 +22,6 @@ import com.anasikus.lifeassistant.ui.AppColors
 import com.anasikus.lifeassistant.ui.navigation.AppDestination
 import com.anasikus.lifeassistant.ui.navigation.BottomNavigationBar
 import com.anasikus.lifeassistant.ui.screens.CalendarScreen
-import com.anasikus.lifeassistant.ui.screens.ShiftScheduleScreen
 import com.anasikus.lifeassistant.ui.screens.FinanceScreen
 import com.anasikus.lifeassistant.ui.screens.FeaturePlaceholderScreen
 import com.anasikus.lifeassistant.ui.screens.TasksScreen
@@ -74,7 +73,7 @@ fun AssistantScreen(
     calendarViewModel: CalendarViewModel
 ) {
     var selectedDestination by remember {
-        mutableStateOf(AppDestination.TASKS)
+        mutableStateOf(AppDestination.CALENDAR)
     }
 
     Scaffold(
@@ -109,8 +108,6 @@ fun AssistantScreen(
                     modifier = screenModifier
                 )
             }
-
-            AppDestination.SHIFTS -> ShiftScheduleScreen(calendarViewModel, screenModifier)
 
             AppDestination.FINANCE -> FinanceScreen(calendarViewModel, screenModifier)
 

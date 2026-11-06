@@ -112,8 +112,7 @@ fun CalendarTimelineCard(
                             onDragCancel = { preview = origin; interacting = false }
                         )
                     }
-                    .pointerInput(itemKey, editable) {
-                        if (!editable) return@pointerInput
+                    .pointerInput(itemKey) {
                         detectTapGestures(onTap = { currentClick(preview) })
                     }
                     .padding(horizontal = 5.dp, vertical = 3.dp)

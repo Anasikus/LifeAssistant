@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.screens
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -22,6 +23,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -67,6 +70,7 @@ import com.anasikus.lifeassistant.domain.ScheduledTask
 import com.anasikus.lifeassistant.ui.AppColors
 import com.anasikus.lifeassistant.domain.TimelineRange
 import com.anasikus.lifeassistant.ui.components.CalendarTimelineCard
+import com.anasikus.lifeassistant.ui.components.TaskEditorDialog
 import com.anasikus.lifeassistant.ui.components.TimePickerField
 import com.anasikus.lifeassistant.ui.components.CalendarEventDialog
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
@@ -95,9 +99,13 @@ fun CalendarScreen(
     val shiftDays by viewModel.shiftDays.collectAsState()
     val specialDates by viewModel.specialDates.collectAsState()
     var showPlanningDialog by remember { mutableStateOf(false) }
+    var showShifts by remember { mutableStateOf(false) }
+    var showSettingsMenu by remember { mutableStateOf(false) }
+    var showGridControls by remember { mutableStateOf(false) }
+    var createTask by remember { mutableStateOf(false) }
 
     var anchorDate by remember { mutableStateOf(CalendarDateUtils.today()) }
-    var mode by remember { mutableStateOf(CalendarViewMode.WEEK) }
+    var mode by remember { mutableStateOf(CalendarViewMode.DAY) }
     var intervalMinutes by remember { mutableStateOf(30) }
 
     var showEventDialog by remember { mutableStateOf(false) }
@@ -131,31 +139,46 @@ fun CalendarScreen(
         CalendarDateUtils.datesBetween(rangeStart, rangeEnd)
     }
 
-    val occurrences = remember(events, eventOverrides, rangeStart, rangeEnd) {
+    val monthGrid = remember(rangeStart, mode) {
+        if (mode == CalendarViewMode.MONTH) CalendarDateUtils.monthGridDates(rangeStart) else emptyList()
+    }
+    val displayStart = monthGrid.firstOrNull() ?: rangeStart
+    val displayEnd = monthGrid.lastOrNull() ?: rangeEnd
+    val occurrences = remember(events, eventOverrides, displayStart, displayEnd) {
         CalendarEventRules.expand(
             events = events,
-            rangeStart = rangeStart,
-            rangeEnd = rangeEnd,
+            rangeStart = displayStart,
+            rangeEnd = displayEnd,
             overrides = eventOverrides
         )
     }
 
-    val effectiveShifts = remember(shiftPattern, shiftDays, rangeStart, rangeEnd, mode) {
-        val grid = if (mode == CalendarViewMode.MONTH) CalendarDateUtils.monthGridDates(anchorDate) else emptyList()
-        ShiftRules.days(CalendarDateUtils.addDays(grid.firstOrNull() ?: rangeStart, -1), grid.lastOrNull() ?: rangeEnd, shiftPattern, shiftDays)
+    val effectiveShifts = remember(shiftPattern, shiftDays, displayStart, displayEnd) {
+        ShiftRules.days(CalendarDateUtils.addDays(displayStart, -1), displayEnd, shiftPattern, shiftDays)
     }
-    val shiftBlocks = remember(effectiveShifts, rangeStart, rangeEnd) {
+    val shiftBlocks = remember(effectiveShifts, displayStart, displayEnd) {
         CalendarEventRules.expand(
-            effectiveShifts.filter { it.status == "WORK" && !it.predicted }.mapIndexed { index, day ->
-                CalendarEventEntity(id = -index - 1, title = "Работа · смена", startDate = day.date, startMinute = day.startMinute, durationMinutes = day.durationMinutes)
-            }, rangeStart, rangeEnd
+            effectiveShifts.filter { it.status == "WORK" }.mapIndexed { index, day ->
+                CalendarEventEntity(
+                    id = -index - 1,
+                    title = if (day.predicted) "Работа · предположение" else "Работа · смена",
+                    startDate = day.date,
+                    startMinute = day.startMinute,
+                    durationMinutes = day.durationMinutes
+                )
+            },
+            displayStart,
+            displayEnd
         )
     }
-
-    val scheduledTasks = remember(tasks, occurrences, shiftBlocks, placements, rangeStart, rangeEnd) {
+    val displayEvents = remember(occurrences, shiftBlocks) {
+        (occurrences + shiftBlocks).sortedWith(compareBy({ it.date }, { it.startMinute }))
+    }
+    val scheduledTasks = remember(tasks, occurrences, shiftBlocks, effectiveShifts, placements, rangeStart, rangeEnd) {
+        val tentativeDates = effectiveShifts.filter { it.predicted }.map { it.date }.toSet()
         CalendarTaskScheduler.schedule(
             tasks = tasks,
-            events = occurrences + shiftBlocks,
+            events = occurrences + shiftBlocks.filter { it.instanceDate !in tentativeDates },
             rangeStart = rangeStart,
             rangeEnd = rangeEnd,
             placements = placements
@@ -172,6 +195,7 @@ fun CalendarScreen(
     }
 
     fun openNewEvent(date: String, minute: Int) {
+        createTask = false
         editingEvent = null
         eventInitialDate = date
         eventOccurrenceDate = date
@@ -181,6 +205,11 @@ fun CalendarScreen(
     }
 
     fun openExistingEvent(occurrence: CalendarEventOccurrence) {
+        if (occurrence.event.id < 0) {
+            showShifts = true
+            return
+        }
+        createTask = false
         editingEvent = occurrence.event
         eventInitialDate = occurrence.instanceDate
         eventOccurrenceDate = occurrence.occurrenceDate
@@ -235,6 +264,11 @@ fun CalendarScreen(
         CalendarViewMode.YEAR -> rangeStart.take(4)
     }
 
+    if (showShifts) {
+        ShiftScheduleScreen(viewModel, anchorDate, onBack = { showShifts = false }, modifier = modifier)
+        return
+    }
+
     Surface(modifier = modifier.fillMaxSize(), color = AppColors.Background) {
         Column(
             modifier = Modifier
@@ -242,18 +276,22 @@ fun CalendarScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "ПЛАНИРОВАНИЕ",
-                color = AppColors.Accent,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Календарь",
-                color = AppColors.MainText,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Календарь", Modifier.weight(1f), color = AppColors.MainText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                TextButton(onClick = { anchorDate = CalendarDateUtils.today(); mode = CalendarViewMode.DAY }) {
+                    Text("Сегодня", color = AppColors.Accent)
+                }
+                Box {
+                    TextButton(onClick = { showSettingsMenu = true }) { Text("⋮", color = AppColors.Accent, fontSize = 22.sp) }
+                    DropdownMenu(expanded = showSettingsMenu, onDismissRequest = { showSettingsMenu = false }) {
+                        DropdownMenuItem(text = { Text("Категории и праздники") }, onClick = { showSettingsMenu = false; showPlanningDialog = true })
+                        DropdownMenuItem(text = { Text("Шаг сетки") }, onClick = { showSettingsMenu = false; mode = CalendarViewMode.DAY; showGridControls = !showGridControls })
+                    }
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -295,8 +333,7 @@ fun CalendarScreen(
                 }
             }
 
-            if (mode == CalendarViewMode.DAY) {
-                Text("Удерживай карточку для переноса. Потяни нижнюю ручку, чтобы изменить длительность.", color = AppColors.SecondaryText, fontSize = 11.sp)
+            if (mode == CalendarViewMode.DAY && showGridControls) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -315,7 +352,6 @@ fun CalendarScreen(
                 }
             }
 
-            TextButton(onClick = { showPlanningDialog = true }) { Text("Категории и праздники", color = AppColors.Accent) }
             effectiveShifts.find { it.date == anchorDate }?.let { day ->
                 Text(
                     "${shiftStatus(day.status)}${if (day.predicted) " · предположение ?" else ""}" +
@@ -327,11 +363,11 @@ fun CalendarScreen(
                 val holidays = ShiftRules.specialDatesFor(anchorDate, specialDates)
                 if (holidays.isNotEmpty()) Text("★ " + holidays.joinToString(" · ") { it.title }, color = AppColors.Yellow, fontSize = 12.sp, maxLines = 2)
             }
-            OutlinedButton(
-                onClick = { openNewEvent(anchorDate, 9 * 60) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("＋ Добавить мероприятие", color = AppColors.Accent)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { openNewEvent(anchorDate, 9 * 60) }, modifier = Modifier.weight(1f)) {
+                    Text("＋ Добавить", color = AppColors.Accent)
+                }
+                TextButton(onClick = { showShifts = true }) { Text("Смены", color = AppColors.Accent) }
             }
 
             when (mode) {
@@ -339,7 +375,7 @@ fun CalendarScreen(
                     ScheduleTimeline(
                         date = anchorDate,
                         intervalMinutes = intervalMinutes,
-                        occurrences = (occurrences + shiftBlocks).filter { it.date == anchorDate },
+                        occurrences = displayEvents.filter { it.date == anchorDate },
                         tasks = scheduledTasks.filter { it.date == anchorDate },
                         onAddEvent = ::openNewEvent,
                         onEventClick = ::openExistingEvent,
@@ -366,11 +402,15 @@ fun CalendarScreen(
                 CalendarViewMode.MONTH -> {
                     MonthEventsContent(
                         anchorDate = anchorDate,
-                        occurrences = occurrences,
+                        occurrences = displayEvents,
+                        scheduledTasks = scheduledTasks,
+                        tasks = tasks,
+                        placements = placements,
                         shifts = effectiveShifts,
                         specialDates = specialDates,
                         categories = categories,
                         onDateSelected = { anchorDate = it },
+                        onDateDoubleClick = { date -> anchorDate = date; openNewEvent(date, 9 * 60) },
                         onEventClick = ::openExistingEvent,
                         onAddEvent = ::openNewEvent,
                         modifier = Modifier.weight(1f)
@@ -396,10 +436,22 @@ fun CalendarScreen(
         CalendarPlanningDialog(viewModel, anchorDate) { showPlanningDialog = false }
     }
 
-    if (showEventDialog) {
+    if (showEventDialog && createTask) {
+        TaskEditorDialog(
+            task = null,
+            initialDate = eventInitialDate,
+            creationHeader = { CalendarCreationTabs(true) { createTask = it } },
+            onDismiss = { showEventDialog = false },
+            onSave = { title, description, start, deadline ->
+                taskViewModel.addTask(TaskEntity(title = title, description = description, startDate = start, deadline = deadline))
+                showEventDialog = false
+            }
+        )
+    } else if (showEventDialog) {
         val currentEvent = editingEvent
         CalendarEventDialog(
             event = currentEvent,
+            creationHeader = if (currentEvent == null) ({ CalendarCreationTabs(false) { createTask = it } }) else null,
             initialDate = eventInitialDate,
             initialStartMinute = eventInitialMinute,
             initialDurationMinutes = eventInitialDuration,
@@ -559,6 +611,18 @@ fun CalendarScreen(
     }
 }
 
+
+@Composable
+private fun CalendarCreationTabs(task: Boolean, onSelect: (Boolean) -> Unit) {
+    Row {
+        TextButton(onClick = { onSelect(false) }) {
+            Text("Мероприятие", color = if (task) AppColors.SecondaryText else AppColors.Accent)
+        }
+        TextButton(onClick = { onSelect(true) }) {
+            Text("Задача", color = if (task) AppColors.Accent else AppColors.SecondaryText)
+        }
+    }
+}
 
 @Composable
 private fun TaskTimeEditDialog(
@@ -924,16 +988,33 @@ private fun WeekTasksContent(
 private fun MonthEventsContent(
     anchorDate: String,
     occurrences: List<CalendarEventOccurrence>,
+    scheduledTasks: List<ScheduledTask>,
+    tasks: List<TaskEntity>,
+    placements: List<CalendarTaskPlacementEntity>,
     shifts: List<ShiftDayEntity>,
     specialDates: List<SpecialDateEntity>,
     categories: List<EventCategoryEntity>,
     onDateSelected: (String) -> Unit,
+    onDateDoubleClick: (String) -> Unit,
     onEventClick: (CalendarEventOccurrence) -> Unit,
     onAddEvent: (String, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val gridDates = remember(anchorDate) { CalendarDateUtils.monthGridDates(anchorDate) }
-    val selectedEvents = occurrences.filter { it.date == anchorDate }
+    val eventsByDate = occurrences.groupBy { it.date }
+    val scheduledById = scheduledTasks.associateBy { it.task.id }
+    val placementById = placements.associateBy { it.taskId }
+    val tasksByDate = tasks.mapNotNull { task ->
+        val placement = placementById[task.id]
+        val date = scheduledById[task.id]?.date ?: when {
+            placement?.hidden == true -> null
+            placement != null -> placement.date
+            else -> task.startDate.takeIf { it.isNotBlank() }
+        }
+        date?.let { it to task }
+    }.groupBy({ it.first }, { it.second })
+    val selectedEvents = eventsByDate[anchorDate].orEmpty()
+    val selectedTasks = tasksByDate[anchorDate].orEmpty()
 
     Column(
         modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
@@ -947,21 +1028,31 @@ private fun MonthEventsContent(
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(7),
-            modifier = Modifier.fillMaxWidth().height(250.dp),
+            modifier = Modifier.fillMaxWidth().height((gridDates.size / 7 * 50).dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             items(gridDates, key = { it }) { date ->
-                val dayEvents = occurrences.count { it.date == date }
+                val eventsOnDay = eventsByDate[date].orEmpty()
+                val dayEvents = eventsOnDay.size
+                val dayTasks = tasksByDate[date].orEmpty().size
+                val hasWork = eventsOnDay.any { occurrence ->
+                    occurrence.event.id < 0 || occurrence.event.hourlyRateCents != null ||
+                        categories.any { it.id == occurrence.event.categoryId && it.kind == "WORK" }
+                }
                 val dayShift = shifts.find { it.date == date }
                 val daySpecials = ShiftRules.specialDatesFor(date, specialDates)
                 val isSelected = date == anchorDate
                 val isInMonth = date.take(7) == anchorDate.take(7)
                 Card(
-                    modifier = Modifier.fillMaxWidth().height(48.dp).clickable { onDateSelected(date) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp).combinedClickable(
+                        onClick = { onDateSelected(date) },
+                        onDoubleClick = { onDateDoubleClick(date) }
+                    ),
                     colors = CardDefaults.cardColors(
                         containerColor = dayShift?.let { shiftColor(it.status).copy(alpha = if (isSelected) 0.65f else if (it.predicted) 0.12f else 0.28f) }
-                            ?: if (isSelected) AppColors.Accent.copy(alpha = 0.28f) else AppColors.Card
+                            ?: if (hasWork) shiftColor("WORK").copy(alpha = if (isSelected) 0.65f else 0.28f)
+                            else if (isSelected) AppColors.Accent.copy(alpha = 0.28f) else AppColors.Card
                     )
                 ) {
                     Column(
@@ -974,8 +1065,8 @@ private fun MonthEventsContent(
                             color = if (isInMonth) AppColors.MainText else AppColors.SecondaryText.copy(alpha = 0.5f),
                             fontSize = 12.sp
                         )
-                        if (dayEvents > 0 || daySpecials.isNotEmpty() || dayShift?.predicted == true) {
-                            Text("${if (dayEvents > 0) "• $dayEvents" else ""}${if (daySpecials.isNotEmpty()) " ★" else ""}${if (dayShift?.predicted == true) " ?" else ""}", color = AppColors.MainText, fontSize = 9.sp)
+                        if (dayEvents + dayTasks > 0 || daySpecials.isNotEmpty() || dayShift?.predicted == true) {
+                            Text("${if (dayEvents + dayTasks > 0) "• ${dayEvents + dayTasks}" else ""}${if (daySpecials.isNotEmpty()) " ★" else ""}${if (dayShift?.predicted == true) " ?" else ""}", color = AppColors.MainText, fontSize = 9.sp)
                         }
                     }
                 }
@@ -985,15 +1076,28 @@ private fun MonthEventsContent(
         Text("Голубой — работа · красный — выходной · жёлтый — больничный · фиолетовый — отпуск · ? — предположение", color = AppColors.SecondaryText, fontSize = 11.sp)
         ShiftRules.specialDatesFor(anchorDate, specialDates).forEach { Text("★ ${it.title}", color = AppColors.Yellow) }
         Text(CalendarDateUtils.formatLongDate(anchorDate), color = AppColors.MainText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        if (selectedEvents.isEmpty()) {
-            Text("На этот день мероприятий нет.", color = AppColors.SecondaryText, fontSize = 13.sp)
-        } else {
+        Text("Двойное нажатие добавляет запись", color = AppColors.SecondaryText, fontSize = 11.sp)
+        if (selectedTasks.isEmpty() && selectedEvents.isEmpty()) {
+            Text("На этот день записей нет.", color = AppColors.SecondaryText, fontSize = 13.sp)
+        }
+        if (selectedTasks.isNotEmpty()) {
+            Text("Задачи", color = AppColors.SecondaryText, fontWeight = FontWeight.SemiBold)
+            selectedTasks.forEach { task ->
+                val time = scheduledById[task.id]?.let { CalendarDisplay.interval(it.startMinute, it.durationMinutes) }
+                Text(
+                    (if (task.completed) "✓ " else "• ") + task.title + (time?.let { " · $it" } ?: ""),
+                    color = AppColors.MainText
+                )
+            }
+        }
+        if (selectedEvents.isNotEmpty()) {
+            Text("Мероприятия и смены", color = AppColors.SecondaryText, fontWeight = FontWeight.SemiBold)
             selectedEvents.forEach { occurrence ->
                 EventListCard(occurrence = occurrence, categoryName = categories.find { it.id == occurrence.event.categoryId }?.name, onClick = { onEventClick(occurrence) })
             }
         }
         TextButton(onClick = { onAddEvent(anchorDate, 9 * 60) }) {
-            Text("＋ Добавить мероприятие на этот день", color = AppColors.Accent)
+            Text("＋ Добавить запись на этот день", color = AppColors.Accent)
         }
     }
 }

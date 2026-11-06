@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.anasikus.lifeassistant.data.FinanceTransactionEntity
@@ -35,13 +36,25 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
         }
     }
     val today = CalendarDateUtils.today()
-    val minute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-    val sources by produceState(emptyList<FinanceSource>(), events, overrides, pattern, days, today, minute) {
-        value = withContext(Dispatchers.Default) {
-            FinanceRules.sources(events, overrides, pattern, days, today, minute)
+    var month by remember { mutableStateOf(CalendarDateUtils.startOfMonth(today)) }
+    val monthEnd = CalendarDateUtils.endOfMonth(month)
+    val cutoff = minOf(monthEnd, today)
+    val minute = if (cutoff == today) now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE) else 1439
+    val sources = key(cutoff) {
+        val calculated by produceState(emptyList<FinanceSource>(), events, overrides, pattern, days, minute) {
+            value = withContext(Dispatchers.Default) {
+                FinanceRules.sources(events, overrides, pattern, days, cutoff, minute)
+            }
         }
+        calculated
     }
-    val totals = remember(sources, transactions) { FinanceRules.totals(sources, transactions) }
+    val totals = remember(sources, transactions, month, cutoff) {
+        FinanceRules.monthTotals(sources, transactions, month, cutoff)
+    }
+    val monthTransactions = remember(transactions, month, cutoff) {
+        transactions.filter { it.date in month..cutoff }
+    }
+    val paymentsThroughCutoff = remember(transactions, cutoff) { transactions.filter { it.date <= cutoff } }
     var newIncome by remember { mutableStateOf<Boolean?>(null) }
     var deleting by remember { mutableStateOf<FinanceTransactionEntity?>(null) }
 
@@ -52,6 +65,16 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item { Text("Финансы", style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText) }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { month = CalendarDateUtils.addMonths(month, -1) }) { Text("‹") }
+                    Text(CalendarDateUtils.formatMonth(month), Modifier.weight(1f), color = AppColors.MainText)
+                    TextButton(
+                        onClick = { month = CalendarDateUtils.addMonths(month, 1) },
+                        enabled = month < CalendarDateUtils.startOfMonth(today)
+                    ) { Text("›") }
+                }
+            }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FinanceMetric("Заработано", totals.earned, Modifier.weight(1f))
@@ -65,7 +88,8 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
                 }
             }
             item {
-                Text("Заработано — остаток к выплате за прошедшие смены и подработки. Суммы за всё время.", color = AppColors.SecondaryText)
+                Text("Перенос на начало месяца: ${ShiftRules.money(totals.openingCash)}", color = AppColors.SecondaryText)
+                Text("Заработано — начисления за завершённые смены и подработки за вычетом выплат по ним.", color = AppColors.SecondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { newIncome = true }, modifier = Modifier.weight(1f)) { Text("Доход") }
                     OutlinedButton(onClick = { newIncome = false }, modifier = Modifier.weight(1f)) { Text("Расход") }
@@ -74,12 +98,12 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
             if (sources.isNotEmpty()) {
                 item { Text("К выплате по работам", color = AppColors.MainText) }
                 items(sources, key = { it.key }) { source ->
-                    Text("${source.name} · ${ShiftRules.money(FinanceRules.outstanding(source, transactions))}", color = AppColors.SecondaryText)
+                    Text("${source.name} · ${ShiftRules.money(FinanceRules.outstanding(source, paymentsThroughCutoff))}", color = AppColors.SecondaryText)
                 }
             }
             item { Text("История операций", color = AppColors.MainText) }
-            if (transactions.isEmpty()) item { Text("Операций пока нет", color = AppColors.SecondaryText) }
-            items(transactions, key = { it.id }) { transaction ->
+            if (monthTransactions.isEmpty()) item { Text("Операций пока нет", color = AppColors.SecondaryText) }
+            items(monthTransactions, key = { it.id }) { transaction ->
                 Card(colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
                         val sign = if (transaction.income) "+" else "−"
@@ -93,7 +117,7 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
             }
         }
         newIncome?.let { income ->
-            TransactionDialog(income, sources, today, onDismiss = { newIncome = null }) {
+            TransactionDialog(income, sources, today, if (monthEnd < today) month else today, onDismiss = { newIncome = null }) {
                 viewModel.addFinanceTransaction(it)
                 newIncome = null
             }
@@ -129,12 +153,13 @@ private fun TransactionDialog(
     income: Boolean,
     sources: List<FinanceSource>,
     today: String,
+    initialDate: String,
     onDismiss: () -> Unit,
     onSave: (FinanceTransactionEntity) -> Unit
 ) {
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(today) }
+    var date by remember { mutableStateOf(initialDate) }
     var selected by remember { mutableStateOf<FinanceSource?>(null) }
     var menu by remember { mutableStateOf(false) }
     val cents = ShiftRules.cents(amount)

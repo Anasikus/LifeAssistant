@@ -31,4 +31,19 @@ class FinanceRulesTest {
         assertEquals(125000L, totals.expense)
         assertEquals(415000L, totals.cash)
     }
+
+    @Test fun monthlyBalanceCarriesDeficitAndAdvanceWithoutCountingFutureOperations() {
+        val source = FinanceSource("event:1", "Ozon", 20000L)
+        val transactions = listOf(
+            FinanceTransactionEntity(date = "2026-10-29", income = true, amountCents = 30000L, note = "", sourceKey = source.key),
+            FinanceTransactionEntity(date = "2026-10-30", income = false, amountCents = 50000L, note = ""),
+            FinanceTransactionEntity(date = "2026-11-02", income = true, amountCents = 5000L, note = ""),
+            FinanceTransactionEntity(date = "2026-11-07", income = true, amountCents = 100000L, note = "")
+        )
+        val result = FinanceRules.monthTotals(listOf(source), transactions, "2026-11-01", "2026-11-06")
+        assertEquals(-10000L, result.earned)
+        assertEquals(-20000L, result.openingCash)
+        assertEquals(5000L, result.income)
+        assertEquals(-15000L, result.cash)
+    }
 }

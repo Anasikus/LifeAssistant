@@ -8,8 +8,13 @@ import com.anasikus.lifeassistant.data.ShiftPatternEntity
 
 data class FinanceSource(val key: String, val name: String, val accrued: Long)
 
-data class FinanceTotals(val earned: Long, val income: Long, val expense: Long) {
-    val cash: Long get() = income - expense
+data class FinanceTotals(
+    val earned: Long,
+    val income: Long,
+    val expense: Long,
+    val openingCash: Long = 0
+) {
+    val cash: Long get() = openingCash + income - expense
 }
 
 object FinanceRules {
@@ -63,7 +68,21 @@ object FinanceRules {
 
     fun outstanding(source: FinanceSource, payments: List<FinanceTransactionEntity>): Long {
         val paid = payments.filter { it.income && it.sourceKey == source.key }.sumOf { it.amountCents }
-        return (source.accrued - paid).coerceAtLeast(0L)
+        return source.accrued - paid
+    }
+
+    fun monthTotals(
+        sources: List<FinanceSource>,
+        payments: List<FinanceTransactionEntity>,
+        monthStart: String,
+        cutoffDate: String
+    ): FinanceTotals {
+        val throughCutoff = payments.filter { it.date <= cutoffDate }
+        val (previous, current) = throughCutoff.partition { it.date < monthStart }
+        return totals(sources, current).copy(
+            earned = sources.sumOf { outstanding(it, throughCutoff) },
+            openingCash = previous.sumOf { if (it.income) it.amountCents else -it.amountCents }
+        )
     }
 
     fun totals(sources: List<FinanceSource>, payments: List<FinanceTransactionEntity>): FinanceTotals =
