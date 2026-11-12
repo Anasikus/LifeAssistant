@@ -34,4 +34,46 @@ class FinanceMessageParserTest {
         assertEquals(50000L, parsed.preferredAmount!!)
         assertEquals(false, parsed.income)
     }
+
+    @Test fun bankSmsExamplesSupportGluedCurrencyAndExcludeBalance() {
+        val cases = listOf(
+            Triple("Счет карты 1234 12:30 перевод по СБП из Т-Банк +50р от Иванова Баланс: 1500р", true, 5000L),
+            Triple("Счет карты 1234 12:30 перевод 50р Баланс: 0р", false, 5000L),
+            Triple("Счет карты 1234 12:30 Зачисление зарплаты: 25000Р Баланс: 30000Р", true, 2500000L),
+            Triple("Счет карты 1234 12:30 Покупка 249р К&Б Баланс: 251р", false, 24900L),
+            Triple("Счёт карты 1234 12:30 перевод -50р Баланс: 150р", false, 5000L)
+        )
+        cases.forEach { (text, income, cents) ->
+            val parsed = FinanceMessageParser.parse(text)
+            assertEquals(text, income, parsed.income)
+            assertEquals(text, cents, parsed.preferredAmount!!)
+            assertTrue(parsed.amounts.last().balance)
+        }
+    }
+
+    @Test fun receiptUsesSubjectRatherThanItemPricesInPreview() {
+        val title = "Чек на 702.90Р от 12.11.2026, ООО \"АГРОТОРГ\""
+        val subject = FinanceMessageParser.emailSubject("Пятёрочка", title + "\nМолоко 90р")
+        assertEquals(title, subject)
+        val parsed = FinanceMessageParser.message(subject, "Молоко 90р и хлеб 50р", "EMAIL")
+        assertEquals(false, parsed.income)
+        assertEquals(70290L, parsed.preferredAmount!!)
+        assertNull(FinanceMessageParser.message("Ozon: чек заказа", "Скачайте чек. Баланс бонусов 500р", "EMAIL").preferredAmount)
+    }
+
+    @Test fun incomingAndOutgoingTransfersCannotShareTemplate() {
+        assertNotEquals(
+            FinanceMessageParser.ruleKey("SMS", "900", "900", "Перевод +50р Баланс 100р"),
+            FinanceMessageParser.ruleKey("SMS", "900", "900", "Перевод 50р Баланс 100р")
+        )
+    }
+
+    @Test fun textFilterIsLiteralCaseInsensitiveAndCannotMatchEmptyText() {
+        assertTrue(FinanceMessageParser.matchesFilter("из Т-Банка", "900", "Перевод из т-банка +50р"))
+        assertFalse(FinanceMessageParser.matchesFilter("из Т-Банка", "900", "Перевод из Альфа-Банка +50р"))
+        assertTrue(FinanceMessageParser.matchesFilter("из Т-Банка\nот Иванова", "900", "Перевод из Т-Банка +50р от Иванова"))
+        assertFalse(FinanceMessageParser.matchesFilter("из Т-Банка\nот Иванова", "900", "Перевод из Т-Банка +50р от Петрова"))
+        assertFalse(FinanceMessageParser.matchesFilter(".*", "900", "Перевод +50р"))
+        assertFalse(FinanceMessageParser.matchesFilter(" ", "900", "Перевод +50р"))
+    }
 }

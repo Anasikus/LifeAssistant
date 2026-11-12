@@ -26,6 +26,18 @@ interface FinanceInboxDao {
     @Query("SELECT * FROM finance_import_rules WHERE `key` = :key")
     suspend fun rule(key: String): FinanceImportRuleEntity?
 
+    @Query("SELECT * FROM finance_import_rules WHERE source = :source AND sender = :sender AND textFilter IS NOT NULL")
+    suspend fun filteredRules(source: String, sender: String): List<FinanceImportRuleEntity>
+
+    @Transaction
+    suspend fun configureSender(source: String, sender: String, bank: String, financial: Boolean) {
+        saveRule(FinanceImportRuleEntity(
+            key = FinanceMessageParser.senderKey(source, sender), source = source, sender = sender,
+            template = "Все сообщения отправителя", action = if (financial) "FINANCIAL" else "BLOCK_SENDER",
+            bankName = bank.trim().takeIf { it.isNotEmpty() }
+        ))
+    }
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertMessage(value: FinanceInboxEntity): Long
 
@@ -63,17 +75,32 @@ interface FinanceInboxDao {
     @Transaction
     suspend fun capture(value: FinanceInboxEntity) {
         if (byEvent(value.eventKey) != null) return
-        val learned = rule(value.ruleKey)
+        val senderRule = rule(FinanceMessageParser.senderKey(value.source, value.sender))
+        if (senderRule?.action == "BLOCK_SENDER" && value.source != "MANUAL") return
+        val parsed = FinanceMessageParser.message(value.title, value.body, value.source)
+        // A broad text rule must also agree with the detected direction. Two matches require review.
+        val matching = filteredRules(value.source, value.sender).filter {
+            it.action in listOf("AUTO", "IGNORE", "KEEP") && it.income == parsed.income && parsed.income != null &&
+                FinanceMessageParser.matchesFilter(it.textFilter.orEmpty(), value.title, value.body)
+        }
+        val exact = rule(value.ruleKey)
+        val learned = when {
+            exact?.action in listOf("IGNORE", "KEEP") -> exact
+            matching.size == 1 -> matching.single()
+            matching.isEmpty() -> exact
+            else -> null
+        }
         if (learned?.action == "IGNORE" && value.source != "MANUAL") return
-        val parsed = FinanceMessageParser.message(value.title, value.body)
-        val automaticAmount = learned?.amountOrdinal?.let { parsed.amounts.getOrNull(it) }
-            ?.takeIf { !it.balance && it.cents > 0L }?.cents
+        val automaticAmount = if (learned?.textFilter != null) parsed.preferredAmount else
+            learned?.amountOrdinal?.let { parsed.amounts.getOrNull(it) }
+                ?.takeIf { !it.balance && it.cents > 0L }?.cents
         val amount = automaticAmount ?: parsed.preferredAmount
         val possibleDuplicate = amount?.let {
             nearMessages(it, value.receivedAt - 120_000L, value.receivedAt + 120_000L)
                 .any { prior -> prior.proposedIncome == (learned?.income ?: parsed.income) }
         } ?: false
         val id = insertMessage(value.copy(
+            ruleKey = learned?.key ?: value.ruleKey,
             status = if (learned?.action == "KEEP") "SAVED" else "PENDING",
             proposedIncome = learned?.income ?: parsed.income,
             proposedAmountCents = amount,
@@ -107,7 +134,8 @@ interface FinanceInboxDao {
         sourceKey: String?,
         sourceName: String?,
         learn: Boolean,
-        automatic: Boolean = false
+        automatic: Boolean = false,
+        textFilter: String? = null
     ) {
         require(amount > 0L)
         require(date.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")))
@@ -115,7 +143,14 @@ interface FinanceInboxDao {
         com.anasikus.lifeassistant.domain.CalendarDateUtils.parseCalendar(date)
         val old = message(id) ?: return
         if (old.status == "DELETED") return
-        val key = FinanceMessageParser.ruleKey(old.source, old.sender, title, body)
+        val filter = textFilter?.trim()?.takeIf { it.isNotEmpty() }
+        require(filter == null || FinanceMessageParser.matchesFilter(filter, title, body))
+        val priorRule = rule(old.ruleKey)
+        val key = when {
+            automatic -> old.ruleKey
+            filter != null -> "filter:" + FinanceMessageParser.hash(old.source + "\n" + old.sender + "\n" + income + "\n" + filter.lowercase(java.util.Locale.ROOT))
+            else -> FinanceMessageParser.ruleKey(old.source, old.sender, title, body)
+        }
         val existing = transactionForMessage(id)
         val category = categoryId?.takeIf { categoryExists(it) == 1 }
         val entry = FinanceTransactionEntity(
@@ -139,7 +174,7 @@ interface FinanceInboxDao {
         if (key != old.ruleKey) rule(old.ruleKey)?.let { saveRule(it.copy(action = "REVIEW")) }
         if (!learn && !automatic) rule(key)?.let { if (it.action == "AUTO") saveRule(it.copy(action = "REVIEW")) }
         if (learn) {
-            val amounts = FinanceMessageParser.message(title, body).amounts
+            val amounts = FinanceMessageParser.message(title, body, old.source).amounts
             val ordinal = amounts.indices.singleOrNull { !amounts[it].balance && amounts[it].cents == amount }
             saveRule(FinanceImportRuleEntity(
                 key = key, source = old.source, sender = old.sender,
@@ -147,7 +182,9 @@ interface FinanceInboxDao {
                 action = if (ordinal == null || old.source == "MANUAL") "REVIEW" else "AUTO",
                 income = income, amountOrdinal = ordinal,
                 expenseCategoryId = entry.expenseCategoryId,
-                incomeSourceKey = entry.sourceKey, incomeSourceName = entry.sourceName
+                incomeSourceKey = entry.sourceKey, incomeSourceName = entry.sourceName,
+                bankName = rule(FinanceMessageParser.senderKey(old.source, old.sender))?.bankName ?: priorRule?.bankName,
+                textFilter = filter
             ))
         }
     }
@@ -155,7 +192,7 @@ interface FinanceInboxDao {
     @Transaction
     suspend fun keepMessage(id: Long, title: String, body: String) {
         val old = message(id)?.takeUnless { it.status == "DELETED" } ?: return
-        if (transactionForMessage(id) != null) return
+        transactionForMessage(id)?.let { removeTransaction(it.id) }
         val key = FinanceMessageParser.ruleKey(old.source, old.sender, title, body)
         if (key != old.ruleKey) rule(old.ruleKey)?.let { saveRule(it.copy(action = "REVIEW")) }
         updateMessage(old.copy(title = title, body = body, ruleKey = key, status = "SAVED", automatic = false))
@@ -170,7 +207,7 @@ interface FinanceInboxDao {
         transactionForMessage(id)?.let { removeTransaction(it.id) }
         updateMessage(old.copy(status = "IGNORED", automatic = false))
         val learned = rule(old.ruleKey)
-        if (learn) saveRule(FinanceImportRuleEntity(
+        if (learn) saveRule(learned?.copy(action = "IGNORE") ?: FinanceImportRuleEntity(
             key = old.ruleKey, source = old.source, sender = old.sender,
             template = FinanceMessageParser.template(old.title, old.body), action = "IGNORE"
         )) else if (learned?.action == "AUTO") saveRule(learned.copy(action = "REVIEW"))

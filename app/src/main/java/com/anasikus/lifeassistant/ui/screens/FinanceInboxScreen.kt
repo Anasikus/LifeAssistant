@@ -7,6 +7,10 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -49,6 +53,7 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
     var selected by remember { mutableStateOf<FinanceInboxEntity?>(null) }
     var deleting by remember { mutableStateOf<FinanceInboxEntity?>(null) }
     var ignoring by remember { mutableStateOf<FinanceInboxEntity?>(null) }
+    var senderSettings by remember { mutableStateOf<Pair<String, String>?>(null) }
     var filter by remember { mutableStateOf("PENDING") }
     var showAccess by remember { mutableStateOf(false) }
     var showRules by remember { mutableStateOf(false) }
@@ -82,6 +87,12 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
                 Card(colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text("${sourceLabel(message.source)} · ${message.sender}", color = AppColors.SecondaryText)
+                        val senderRule = rules.find { it.key == FinanceMessageParser.senderKey(message.source, message.sender) }
+                        if (senderRule != null) Text(
+                            (senderRule.bankName?.let { "$it · " }.orEmpty()) + if (senderRule.action == "FINANCIAL") "Финансовый отправитель" else "Сбор отключён",
+                            color = AppColors.SecondaryText
+                        )
+                        TextButton(onClick = { senderSettings = message.source to message.sender }) { Text("Настроить отправителя") }
                         Text(message.title.ifBlank { "Сообщение" }, color = AppColors.MainText)
                         Text(message.body, maxLines = 5, color = AppColors.SecondaryText)
                         Text(CalendarDateUtils.formatDate(FinanceMessageParser.date(message.receivedAt)), color = AppColors.SecondaryText)
@@ -101,10 +112,10 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
             }
         }
         selected?.let { message ->
-            ReviewMessageDialog(message, categories, sources, error,
+            ReviewMessageDialog(message, rules.find { it.key == message.ruleKey }, categories, sources, error,
                 onKeep = { title, body -> viewModel.keepInbox(message.id, title, body); selected = null },
-                onDismiss = { selected = null }) { title, body, income, amount, date, category, source, learn ->
-                viewModel.confirmInbox(message.id, title, body, income, amount, date, category, source?.key, source?.name, learn) { selected = null }
+                onDismiss = { selected = null }) { title, body, income, amount, date, category, source, learn, textFilter ->
+                viewModel.confirmInbox(message.id, title, body, income, amount, date, category, source?.key, source?.name, learn, textFilter) { selected = null }
             }
         }
         ignoring?.let { message ->
@@ -131,7 +142,16 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
             )
         }
         if (showAccess) CaptureAccessDialog { showAccess = false }
-        if (showRules) ImportRulesDialog(rules, categories, viewModel::forgetImportRule) { showRules = false }
+        if (showRules) ImportRulesDialog(rules, categories, viewModel::forgetImportRule,
+            onSender = { source, sender -> senderSettings = source to sender; showRules = false },
+            onEdit = { rule -> messages.firstOrNull { it.ruleKey == rule.key }?.let { selected = it; showRules = false } }) { showRules = false }
+        senderSettings?.let { (source, sender) ->
+            SenderSettingsDialog(source, sender,
+                rules.find { it.key == FinanceMessageParser.senderKey(source, sender) }, error,
+                onDismiss = { senderSettings = null }) { bank, financial ->
+                viewModel.configureFinanceSender(source, sender, bank, financial) { senderSettings = null }
+            }
+        }
         if (showImport) PasteMessageDialog { showImport = false }
         if (showCategories) ExpenseCategoriesDialog(viewModel) { showCategories = false }
     }
@@ -140,23 +160,28 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
 @Composable
 private fun ReviewMessageDialog(
     message: FinanceInboxEntity,
+    existingRule: FinanceImportRuleEntity?,
     categories: List<ExpenseCategoryEntity>,
     sources: List<FinanceSource>,
     error: String?,
     onKeep: (String, String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Boolean, Long, String, Int?, FinanceSource?, Boolean) -> Unit
+    onConfirm: (String, String, Boolean, Long, String, Int?, FinanceSource?, Boolean, String?) -> Unit
 ) {
     var step by remember(message.id) { mutableStateOf(0) }
     var title by remember(message.id) { mutableStateOf(message.title) }
     var body by remember(message.id) { mutableStateOf(message.body) }
-    var income by remember(message.id) { mutableStateOf(message.proposedIncome) }
-    var amount by remember(message.id) { mutableStateOf(message.proposedAmountCents?.let { java.math.BigDecimal.valueOf(it, 2).toPlainString() }.orEmpty()) }
+    val reparsed = remember(message.id) { FinanceMessageParser.message(message.title, message.body, message.source) }
+    var income by remember(message.id) { mutableStateOf(message.proposedIncome ?: reparsed.income) }
+    var amount by remember(message.id) { mutableStateOf((message.proposedAmountCents ?: reparsed.preferredAmount)?.let { java.math.BigDecimal.valueOf(it, 2).toPlainString() }.orEmpty()) }
     var date by remember(message.id) { mutableStateOf(message.transactionDate ?: FinanceMessageParser.date(message.receivedAt)) }
     var category by remember(message.id) { mutableStateOf(message.expenseCategoryId) }
     var source by remember(message.id) { mutableStateOf(sources.find { it.key == message.incomeSourceKey } ?: message.incomeSourceKey?.let { FinanceSource(it, message.incomeSourceName.orEmpty(), 0L) }) }
     var learn by remember(message.id) { mutableStateOf(true) }
     var sourceMenu by remember { mutableStateOf(false) }
+    var textFilter by remember(message.id) { mutableStateOf(existingRule?.textFilter.orEmpty()) }
+    var customIncome by remember(message.id) { mutableStateOf(if (message.incomeSourceKey?.startsWith("income:") == true) message.incomeSourceName.orEmpty() else "") }
+    val filterValid = textFilter.isBlank() || FinanceMessageParser.matchesFilter(textFilter, title, body)
     val cents = ShiftRules.cents(amount)
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -167,20 +192,17 @@ private fun ReviewMessageDialog(
                     OutlinedTextField(title, { title = it }, label = { Text("Заголовок") }, singleLine = true)
                     OutlinedTextField(body, { body = it }, label = { Text("Текст сообщения") }, minLines = 2, maxLines = 6)
                     TextButton(onClick = {
-                        val parsed = FinanceMessageParser.message(title, body)
+                        val parsed = FinanceMessageParser.message(title, body, message.source)
                         income = parsed.income
                         amount = parsed.preferredAmount?.let { java.math.BigDecimal.valueOf(it, 2).toPlainString() }.orEmpty()
                     }) { Text("Разобрать текст заново") }
-                    Row {
-                        TextButton(onClick = { income = false }) { Text(if (income == false) "● Расход" else "○ Расход") }
-                        TextButton(onClick = { income = true }) { Text(if (income == true) "● Доход" else "○ Доход") }
-                    }
+                    FinanceDirectionButtons(income) { income = it }
                     OutlinedTextField(amount, { amount = it }, label = { Text("Сумма, ₽") }, singleLine = true)
                     PlanningDateField("Дата операции", date) { date = it }
                     if (message.possibleDuplicate) Text("Проверь похожую операцию в истории перед подтверждением.", color = AppColors.Yellow)
-                    if (message.status != "POSTED") {
-                        TextButton(onClick = { onKeep(title, body) }) { Text("Запомнить как нужное без операции") }
-                    }
+                    TextButton(onClick = { onKeep(title, body) }) { Text("Сохранить без операции в финансах") }
+                    if (message.body.contains("перевод", ignoreCase = true)) Text("Перевод между своими счетами можно сохранить без операции, чтобы он не увеличивал доход или расход.", color = AppColors.SecondaryText)
+                    if (message.source == "EMAIL" && cents == null) Text("В заголовке нет суммы. Для Ozon пока введи итог из чека вручную.", color = AppColors.Yellow)
                     Text("Автоматическая дата — день получения сообщения. Проверь направление и сумму. Если валюта другая, введи сумму в рублях вручную.", color = AppColors.SecondaryText)
                 } else {
                     Text("${if (income == true) "Доход" else "Расход"} · ${ShiftRules.money(cents ?: 0)}")
@@ -189,16 +211,24 @@ private fun ReviewMessageDialog(
                         Box {
                             OutlinedButton(onClick = { sourceMenu = true }) { Text(source?.name ?: "Прочий доход") }
                             DropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
-                                DropdownMenuItem(text = { Text("Прочий доход") }, onClick = { source = null; sourceMenu = false })
-                                sources.forEach { item -> DropdownMenuItem(text = { Text(item.name) }, onClick = { source = item; sourceMenu = false }) }
+                                DropdownMenuItem(text = { Text("Прочий доход") }, onClick = { source = null; customIncome = ""; sourceMenu = false })
+                                sources.forEach { item -> DropdownMenuItem(text = { Text(item.name) }, onClick = { source = item; customIncome = ""; sourceMenu = false }) }
                             }
                         }
                     }
+                    if (income == true) OutlinedTextField(customIncome, {
+                        customIncome = it
+                        if (it.isNotBlank()) source = null
+                    }, label = { Text("Своя категория дохода (необязательно)") }, singleLine = true)
+                    OutlinedTextField(textFilter, { textFilter = it }, label = { Text("Текст для правила (необязательно)") },
+                        supportingText = { Text("Например: из Т-Банка и на новой строке от Иванова. Все строки должны встречаться в сообщении. Для магазина достаточно АГРОТОРГ. Учитывается тот же тип операции.") },
+                        isError = !filterValid)
+                    if (!filterValid) Text("Этот текст должен присутствовать в текущем сообщении.", color = AppColors.Red)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(learn, onCheckedChange = { learn = it })
                         Text("Запомнить для похожих сообщений")
                     }
-                    val matchingAmounts = FinanceMessageParser.message(title, body).amounts.count { !it.balance && it.cents == cents }
+                    val matchingAmounts = FinanceMessageParser.message(title, body, message.source).amounts.count { !it.balance && it.cents == cents }
                     if (learn && matchingAmounts != 1) {
                         Text("Сумма не выделяется однозначно. Похожие сообщения будут приходить на проверку.", color = AppColors.Yellow)
                     }
@@ -208,8 +238,10 @@ private fun ReviewMessageDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = income != null && cents != null && cents > 0 && date <= CalendarDateUtils.today(), onClick = {
-                if (step == 0) step = 1 else onConfirm(title, body, checkNotNull(income), checkNotNull(cents), date, category, source, learn)
+            TextButton(enabled = income != null && cents != null && cents > 0 && date <= CalendarDateUtils.today() && filterValid, onClick = {
+                if (step == 0) step = 1 else onConfirm(title, body, checkNotNull(income), checkNotNull(cents), date, category,
+                    if (customIncome.isNotBlank()) FinanceSource("income:" + FinanceMessageParser.hash(customIncome.trim().lowercase(java.util.Locale.ROOT)), customIncome.trim(), 0L) else source,
+                    learn, textFilter.takeIf { it.isNotBlank() })
             }) { Text(if (step == 0) "Да, всё верно" else "Сохранить") }
         },
         dismissButton = { TextButton(onClick = { if (step > 0) step = 0 else onDismiss() }) { Text(if (step > 0) "Назад" else "Отмена") } }
@@ -270,7 +302,7 @@ private fun CaptureToggle(label: String, enabled: Boolean, onChange: (Boolean) -
 }
 
 @Composable
-private fun ImportRulesDialog(rules: List<FinanceImportRuleEntity>, categories: List<ExpenseCategoryEntity>, onForget: (String) -> Unit, onDismiss: () -> Unit) {
+private fun ImportRulesDialog(rules: List<FinanceImportRuleEntity>, categories: List<ExpenseCategoryEntity>, onForget: (String) -> Unit, onSender: (String, String) -> Unit, onEdit: (FinanceImportRuleEntity) -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Запомненные правила") },
@@ -279,12 +311,16 @@ private fun ImportRulesDialog(rules: List<FinanceImportRuleEntity>, categories: 
                 if (rules.isEmpty()) Text("Подтверди или отклони первое сообщение, чтобы создать правило.")
                 rules.forEach { rule ->
                     Text("${sourceLabel(rule.source)} · ${rule.sender}")
-                    Text(when (rule.action) { "IGNORE" -> "Пропускать"; "AUTO" -> "Учитывать автоматически"; "KEEP" -> "Сохранять как нужное без операции"; else -> "Проверять вручную" })
+                    Text(when (rule.action) { "IGNORE" -> "Пропускать"; "AUTO" -> "Учитывать автоматически"; "KEEP" -> "Сохранять как нужное без операции"; "FINANCIAL" -> "Финансовый отправитель"; "BLOCK_SENDER" -> "Не собирать сообщения отправителя"; else -> "Проверять вручную" })
                     if (rule.income != null) {
                         Text(if (rule.income) "Доход · ${rule.incomeSourceName ?: "Прочий доход"}"
                             else "Расход · ${categories.find { it.id == rule.expenseCategoryId }?.name ?: "Без категории"}")
                     }
+                    rule.bankName?.let { Text("Банк: $it") }
+                    rule.textFilter?.let { Text("Содержит: $it") }
                     Text(rule.template.take(250), color = AppColors.SecondaryText)
+                    if (rule.action in listOf("FINANCIAL", "BLOCK_SENDER")) TextButton(onClick = { onSender(rule.source, rule.sender) }) { Text("Изменить отправителя") }
+                    else TextButton(onClick = { onEdit(rule) }) { Text("Изменить по сообщению") }
                     TextButton(onClick = { onForget(rule.key) }) { Text("Забыть правило") }
                 }
             }
@@ -336,4 +372,39 @@ private fun sourceLabel(source: String): String = when (source) {
     "EMAIL" -> "Почта"
     "NOTIFICATION" -> "Уведомление"
     else -> "Импорт текста"
+}
+
+
+@Composable
+private fun FinanceDirectionButtons(income: Boolean?, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(false to "Расход", true to "Доход").forEach { (value, label) ->
+            OutlinedButton(
+                onClick = { onChange(value) },
+                modifier = Modifier.weight(1f).semantics { selected = income == value },
+                border = BorderStroke(1.dp, if (income == value) Color.White else Color.Gray),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.MainText)
+            ) { Text(label) }
+        }
+    }
+}
+
+@Composable
+private fun SenderSettingsDialog(
+    source: String, sender: String, rule: FinanceImportRuleEntity?, error: String?,
+    onDismiss: () -> Unit, onSave: (String, Boolean) -> Unit
+) {
+    var bank by remember(source, sender) { mutableStateOf(rule?.bankName.orEmpty()) }
+    var financial by remember(source, sender) { mutableStateOf(rule?.action != "BLOCK_SENDER") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Отправитель") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${sourceLabel(source)} · $sender")
+            OutlinedTextField(bank, { bank = it }, label = { Text("Банк или организация") }, singleLine = true)
+            CaptureToggle("Финансовый отправитель", financial) { financial = it }
+            Text(if (financial) "Новые сообщения будут обрабатываться. Категорию и автоматический учёт задавай отдельно для конкретных операций."
+                else "Новые сообщения этого отправителя собираться не будут. Старые сообщения и операции сохранятся. Включить обратно можно в правилах.")
+            error?.let { Text(it, color = AppColors.Red) }
+        }
+    }, confirmButton = { TextButton(onClick = { onSave(bank, financial) }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } })
 }

@@ -12,7 +12,7 @@ object FinanceMessageParser {
     }
 
     private val money = Regex(
-        "(?iu)([+-]?\\d(?:[\\d \\u00a0\\u202f]*\\d)?(?:[.,]\\d{1,2})?)\\s*(?:₽|руб(?:лей|ля|ль|\\.)?|RUB\\b|RUR\\b|р\\.)"
+        "(?iu)([+-]?\\d(?:[\\d \\u00a0\\u202f]*\\d)?(?:[.,]\\d{1,2})?)\\s*(?:₽|руб(?:лей|ля|ль|\\.)?|RUB\\b|RUR\\b|р(?:\\.|(?![\\p{L}])))"
     )
     private val incoming = Regex("(?iu)зачисл|поступил|поступлен|пополнен|возврат|получен.*перевод|перевод от|refund|credited|received")
     private val outgoing = Regex("(?iu)покупк|списан|оплат|расход|снятие|purchase|debited|paid|withdraw")
@@ -29,16 +29,33 @@ object FinanceMessageParser {
         val primaryText = balance.find(text)?.range?.first?.let { text.take(it) } ?: text
         val incomingMatch = incoming.containsMatchIn(primaryText)
         val outgoingMatch = outgoing.containsMatchIn(primaryText)
+        val primary = amounts.indices.filter { !amounts[it].balance && amounts[it].cents > 0L }
+        val signed = primary.singleOrNull()?.let { matches[it].groupValues[1].firstOrNull() }
+        val unsignedCardTransfer = Regex("(?iu)сч[её]т карты.*перевод").containsMatchIn(primaryText)
+        val receipt = Regex("(?iu)чек на").containsMatchIn(primaryText)
         val income = when {
+            signed == '+' -> true
+            signed == '-' -> false
             incomingMatch && !outgoingMatch -> true
             outgoingMatch && !incomingMatch -> false
+            !incomingMatch && (unsignedCardTransfer || receipt) -> false
             else -> null
         }
-        val primary = amounts.indices.filter { !amounts[it].balance && amounts[it].cents > 0L }
         return Parsed(income, amounts, primary.singleOrNull())
     }
 
-    fun message(title: String, body: String): Parsed {
+    /** Receipt subject takes priority over item prices and totals in the preview. */
+    fun emailSubject(title: String, preview: String): String =
+        (title + "\n" + preview).lineSequence().firstOrNull {
+            Regex("(?iu)чек на\\s*\\d").containsMatchIn(it)
+        }?.trim() ?: preview.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().ifBlank { title }
+
+    fun message(title: String, body: String, source: String? = null): Parsed {
+        if (source == "EMAIL") return parse(title)
+        val receipt = (title + "\n" + body).lineSequence().firstOrNull {
+            Regex("(?iu)чек на\\s*\\d").containsMatchIn(it)
+        }
+        if (receipt != null) return parse(receipt)
         val fromBody = parse(body)
         val combined = parse(title + "\n" + body)
         val chosen = if (fromBody.amounts.any { !it.balance }) fromBody else combined
@@ -47,7 +64,9 @@ object FinanceMessageParser {
 
     fun template(title: String, body: String): String = (title + "\n" + body)
         .lowercase(Locale.ROOT)
-        .replace(money, "<money>")
+        .replace(money) { match ->
+            match.groupValues[1].firstOrNull()?.takeIf { it == '+' || it == '-' }?.toString().orEmpty() + "<money>"
+        }
         .replace(Regex("\\d{1,4}[./:-]\\d{1,2}(?:[./:-]\\d{1,4})?"), "<date>")
         .replace(Regex("\\d+"), "<n>")
         .replace(Regex("\\s+"), " ")
@@ -55,6 +74,14 @@ object FinanceMessageParser {
 
     fun ruleKey(source: String, sender: String, title: String, body: String): String =
         hash(source + "\n" + sender.lowercase(Locale.ROOT) + "\n" + template(title, body))
+
+    fun senderKey(source: String, sender: String): String = "sender:" + hash(source + "\n" + sender.trim().lowercase(Locale.ROOT))
+
+    fun matchesFilter(filter: String, title: String, body: String): Boolean {
+        val fragments = filter.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        val text = title + "\n" + body
+        return fragments.isNotEmpty() && fragments.all { text.contains(it, ignoreCase = true) }
+    }
 
     fun hash(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }

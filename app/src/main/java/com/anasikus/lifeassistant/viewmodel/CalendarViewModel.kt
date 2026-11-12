@@ -81,11 +81,11 @@ class CalendarViewModel(
     fun confirmInbox(
         id: Long, title: String, body: String, income: Boolean, amount: Long, date: String,
         categoryId: Int?, sourceKey: String?, sourceName: String?, learn: Boolean,
-        onSaved: () -> Unit
+        textFilter: String? = null, onSaved: () -> Unit
     ) {
         viewModelScope.launch {
             try {
-                repository.inbox.confirm(id, title, body, income, amount, date, categoryId, sourceKey, sourceName, learn)
+                repository.inbox.confirm(id, title, body, income, amount, date, categoryId, sourceKey, sourceName, learn, textFilter = textFilter)
                 inboxError.value = null
                 onSaved()
             } catch (error: Exception) {
@@ -105,6 +105,19 @@ class CalendarViewModel(
 
     fun deleteInbox(id: Long) {
         viewModelScope.launch { repository.inbox.deleteMessage(id) }
+    }
+
+    fun configureFinanceSender(source: String, sender: String, bank: String, financial: Boolean, onSaved: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                repository.inbox.configureSender(source, sender, bank, financial)
+                inboxError.value = null
+                onSaved()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                inboxError.value = "Не удалось сохранить настройки отправителя."
+            }
+        }
     }
 
     fun forgetImportRule(key: String) {

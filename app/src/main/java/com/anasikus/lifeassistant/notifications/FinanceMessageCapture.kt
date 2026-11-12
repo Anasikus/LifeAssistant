@@ -35,9 +35,9 @@ object FinanceCaptureSettings {
 object FinanceMessageCapture {
     suspend fun receive(context: Context, source: String, sender: String, title: String, body: String, at: Long, eventKey: String) {
         if (source != "MANUAL" && !FinanceCaptureSettings.enabled(context, source)) return
-        val text = body.trim().ifBlank { title.trim() }.take(8_000)
-        if (text.isBlank()) return
-        val heading = title.trim().take(300)
+        val heading = (if (source == "EMAIL") FinanceMessageParser.emailSubject(title, body) else title).trim().take(300)
+        val text = (if (source == "EMAIL") "" else body.trim().ifBlank { title.trim() }).take(8_000)
+        if (text.isBlank() && heading.isBlank()) return
         val author = sender.trim().take(300)
         AppDatabase.getDatabase(context).financeInboxDao().capture(FinanceInboxEntity(
             eventKey = FinanceMessageParser.hash(eventKey), source = source, sender = author,
@@ -65,11 +65,15 @@ class FinanceNotificationListener : NotificationListenerService() {
         val short = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
         val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n")
         val body = big?.takeIf { it.isNotBlank() } ?: lines?.takeIf { it.isNotBlank() } ?: short.orEmpty()
+        // Some clients put the subject in EXTRA_TITLE instead of the sender.
+        // A subject with an amount must not become a new sender for each purchase.
+        val author = if (isMail && FinanceMessageParser.parse(title).amounts.isEmpty())
+            "${sbn.packageName} · $title" else sbn.packageName
         val at = sbn.postTime
         scope.launch {
             try {
                 FinanceMessageCapture.receive(
-                    applicationContext, source, sbn.packageName, title, body, at,
+                    applicationContext, source, author, title, body, at,
                     "${sbn.key}:${notification.`when`.takeIf { it > 0 } ?: at}:${FinanceMessageParser.hash(title + body)}"
                 )
             } catch (error: Exception) {
