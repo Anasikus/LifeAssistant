@@ -283,7 +283,8 @@ private fun CaptureAccessDialog(onDismiss: () -> Unit) {
                 }
                 if (!smsPermission) Text("Если Android не разрешает SMS, сообщения можно получать через уведомления SMS-приложения или вставлять вручную.")
                 CaptureToggle("Почта через уведомления", email) { email = it; FinanceCaptureSettings.setEnabled(context, "EMAIL", it) }
-                CaptureToggle("Другие уведомления", notifications) { notifications = it; FinanceCaptureSettings.setEnabled(context, "NOTIFICATION", it) }
+                CaptureToggle("Пуш-уведомления приложений", notifications) { notifications = it; FinanceCaptureSettings.setEnabled(context, "NOTIFICATION", it) }
+                Text("Яндекс Пэй, банки и другие приложения. Новые сообщения попадают на проверку; ненужных отправителей можно отключить, а для операций — задать правила.")
                 Text(if (notificationAccess) "Доступ к уведомлениям разрешён" else "Требуется доступ к уведомлениям в Android")
                 OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Настройки доступа Android") }
                 Text("Включи уведомления в почтовом клиенте. Импортируется видимый текст новых сообщений. Правила и разбор выполняются на телефоне.")

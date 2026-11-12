@@ -52,7 +52,9 @@ class FinanceNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName == packageName) return
         val notification = sbn.notification
-        if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0 || sbn.isOngoing) return
+        // Group headers repeat their child notifications. Ongoing notifications can
+        // still contain transactions, so capture them just like other app pushes.
+        if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val isMail = notification.category == Notification.CATEGORY_EMAIL || sbn.packageName in setOf(
             "com.google.android.gm", "com.mail.mobile.android.mail", "ru.mail.mailapp",
             "com.microsoft.office.outlook", "com.samsung.android.email.provider"
@@ -60,11 +62,13 @@ class FinanceNotificationListener : NotificationListenerService() {
         val source = if (isMail) "EMAIL" else "NOTIFICATION"
         if (!FinanceCaptureSettings.enabled(this, source)) return
         val extras = notification.extras
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() }
+            ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString().orEmpty()
         val big = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
         val short = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
         val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n")
-        val body = big?.takeIf { it.isNotBlank() } ?: lines?.takeIf { it.isNotBlank() } ?: short.orEmpty()
+        val body = big?.takeIf { it.isNotBlank() } ?: lines?.takeIf { it.isNotBlank() }
+            ?: short?.takeIf { it.isNotBlank() } ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
         // Some clients put the subject in EXTRA_TITLE instead of the sender.
         // A subject with an amount must not become a new sender for each purchase.
         val author = if (isMail && FinanceMessageParser.parse(title).amounts.isEmpty())
