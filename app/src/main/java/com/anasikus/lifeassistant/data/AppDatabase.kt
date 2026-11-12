@@ -20,9 +20,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SpecialDateEntity::class,
         FinanceTransactionEntity::class,
         ExpenseCategoryEntity::class,
-        PaymentPlanEntity::class
+        PaymentPlanEntity::class,
+        FinanceInboxEntity::class,
+        FinanceImportRuleEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,6 +33,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun calendarEventDao(): CalendarEventDao
     abstract fun calendarTaskPlacementDao(): CalendarTaskPlacementDao
     abstract fun calendarEventOverrideDao(): CalendarEventOverrideDao
+
+    abstract fun financeInboxDao(): FinanceInboxDao
 
     abstract fun calendarPlanningDao(): CalendarPlanningDao
 
@@ -166,6 +170,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE finance_transactions ADD COLUMN inboxMessageId INTEGER")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_finance_transactions_inboxMessageId ON finance_transactions(inboxMessageId)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS finance_inbox (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, eventKey TEXT NOT NULL, source TEXT NOT NULL, sender TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, receivedAt INTEGER NOT NULL, ruleKey TEXT NOT NULL, status TEXT NOT NULL, proposedIncome INTEGER, proposedAmountCents INTEGER, expenseCategoryId INTEGER, incomeSourceKey TEXT, incomeSourceName TEXT, automatic INTEGER NOT NULL, possibleDuplicate INTEGER NOT NULL, transactionDate TEXT)")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_finance_inbox_eventKey ON finance_inbox(eventKey)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS finance_import_rules (key TEXT NOT NULL PRIMARY KEY, source TEXT NOT NULL, sender TEXT NOT NULL, template TEXT NOT NULL, action TEXT NOT NULL, income INTEGER, amountOrdinal INTEGER, expenseCategoryId INTEGER, incomeSourceKey TEXT, incomeSourceName TEXT)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -186,7 +200,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
                         )
                     .build()
                     .also {

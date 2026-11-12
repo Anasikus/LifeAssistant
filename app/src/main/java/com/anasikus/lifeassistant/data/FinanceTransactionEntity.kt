@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "finance_transactions", indices = [Index(value = ["planKey"], unique = true)])
+@Entity(tableName = "finance_transactions", indices = [Index(value = ["planKey"], unique = true), Index(value = ["inboxMessageId"], unique = true)])
 data class FinanceTransactionEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val date: String,
@@ -14,5 +14,6 @@ data class FinanceTransactionEntity(
     val sourceKey: String? = null,
     val sourceName: String? = null,
     val expenseCategoryId: Int? = null,
-    val planKey: String? = null
+    val planKey: String? = null,
+    val inboxMessageId: Long? = null
 )

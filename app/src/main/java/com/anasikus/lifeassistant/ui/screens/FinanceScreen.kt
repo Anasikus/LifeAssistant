@@ -35,6 +35,8 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
     val days by viewModel.shiftDays.collectAsState()
     val transactions by viewModel.financeTransactions.collectAsState()
     val categories by viewModel.expenseCategories.collectAsState()
+    val inbox by viewModel.inboxMessages.collectAsState()
+    var showInbox by remember { mutableStateOf(false) }
     var showPlans by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
     var showStatistics by remember { mutableStateOf(false) }
@@ -67,13 +69,25 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
     var newIncome by remember { mutableStateOf<Boolean?>(null) }
     var deleting by remember { mutableStateOf<FinanceTransactionEntity?>(null) }
 
+    if (showInbox) {
+        FinanceInboxScreen(viewModel, sources, onBack = { showInbox = false }, modifier = modifier)
+        return
+    }
+
     MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
         LazyColumn(
             modifier = modifier.background(AppColors.Background),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item { Text("Финансы", style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText) }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Финансы", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText)
+                    TextButton(onClick = { showInbox = true }) {
+                        Text("Уведомления (${inbox.count { it.status == "PENDING" }})")
+                    }
+                }
+            }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { month = CalendarDateUtils.addMonths(month, -1) }) { Text("‹") }

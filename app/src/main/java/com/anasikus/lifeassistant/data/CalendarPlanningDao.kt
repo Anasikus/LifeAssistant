@@ -24,10 +24,18 @@ interface CalendarPlanningDao {
     @Query("DELETE FROM expense_categories WHERE id = :id")
     suspend fun removeExpenseCategory(id: Int)
 
+    @Query("UPDATE finance_inbox SET expenseCategoryId = NULL WHERE expenseCategoryId = :id")
+    suspend fun detachInboxCategory(id: Int)
+
+    @Query("UPDATE finance_import_rules SET expenseCategoryId = NULL, action = 'REVIEW' WHERE expenseCategoryId = :id")
+    suspend fun resetImportCategory(id: Int)
+
     @Transaction
     suspend fun deleteExpenseCategory(id: Int) {
         detachExpenseCategory(id)
         detachPlanCategory(id)
+        detachInboxCategory(id)
+        resetImportCategory(id)
         removeExpenseCategory(id)
     }
 

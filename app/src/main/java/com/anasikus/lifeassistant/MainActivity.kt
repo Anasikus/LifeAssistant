@@ -2,6 +2,11 @@
 package com.anasikus.lifeassistant
 
 import android.os.Bundle
+import android.content.Intent
+import android.widget.Toast
+import com.anasikus.lifeassistant.notifications.FinanceMessageCapture
+import com.anasikus.lifeassistant.domain.FinanceMessageParser
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
 import com.anasikus.lifeassistant.notifications.PaymentReminders
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +45,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) importSharedText(intent)
 
         val database = AppDatabase.getDatabase(applicationContext)
         val planning = database.calendarPlanningDao()
@@ -60,7 +66,8 @@ class MainActivity : ComponentActivity() {
             eventDao = database.calendarEventDao(),
             placementDao = database.calendarTaskPlacementDao(),
             overrideDao = database.calendarEventOverrideDao(),
-            planning = database.calendarPlanningDao()
+            planning = database.calendarPlanningDao(),
+            inbox = database.financeInboxDao()
         )
 
         val calendarFactory =
@@ -79,6 +86,33 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        importSharedText(intent)
+    }
+
+    private fun importSharedText(shared: Intent) {
+        if (shared.action != Intent.ACTION_SEND || shared.type != "text/plain") return
+        val body = shared.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.takeIf { it.isNotBlank() } ?: return
+        val title = shared.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val at = System.currentTimeMillis()
+                FinanceMessageCapture.receive(applicationContext, "MANUAL", "Переданный текст", title, body, at,
+                    "share:$at:${FinanceMessageParser.hash(body)}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Текст добавлен в Финансы → Уведомления", Toast.LENGTH_LONG).show()
+                }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Не удалось сохранить текст", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
 }
 
 @Composable

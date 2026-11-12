@@ -7,6 +7,7 @@ import com.anasikus.lifeassistant.data.CalendarEventOverrideDao
 import com.anasikus.lifeassistant.data.CalendarEventOverrideEntity
 import com.anasikus.lifeassistant.data.CalendarTaskPlacementDao
 import com.anasikus.lifeassistant.data.CalendarTaskPlacementEntity
+import com.anasikus.lifeassistant.data.FinanceInboxDao
 import com.anasikus.lifeassistant.data.CalendarPlanningDao
 import kotlinx.coroutines.flow.Flow
 
@@ -14,7 +15,8 @@ class CalendarRepository(
     private val eventDao: CalendarEventDao,
     private val placementDao: CalendarTaskPlacementDao,
     private val overrideDao: CalendarEventOverrideDao,
-    val planning: CalendarPlanningDao
+    val planning: CalendarPlanningDao,
+    val inbox: FinanceInboxDao
 ) {
 
     val allEvents: Flow<List<CalendarEventEntity>> =

@@ -72,16 +72,55 @@ class CalendarViewModel(
         viewModelScope.launch { repository.planning.deletePaymentPlan(id) }
     }
 
+    val inboxMessages = repository.inbox.messages()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val importRules = repository.inbox.rules()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val inboxError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    fun confirmInbox(
+        id: Long, title: String, body: String, income: Boolean, amount: Long, date: String,
+        categoryId: Int?, sourceKey: String?, sourceName: String?, learn: Boolean,
+        onSaved: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.inbox.confirm(id, title, body, income, amount, date, categoryId, sourceKey, sourceName, learn)
+                inboxError.value = null
+                onSaved()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                inboxError.value = "Не удалось сохранить операцию. Повтори сохранение."
+            }
+        }
+    }
+
+    fun keepInbox(id: Long, title: String, body: String) {
+        viewModelScope.launch { repository.inbox.keepMessage(id, title, body) }
+    }
+
+    fun ignoreInbox(id: Long, learn: Boolean) {
+        viewModelScope.launch { repository.inbox.ignore(id, learn) }
+    }
+
+    fun deleteInbox(id: Long) {
+        viewModelScope.launch { repository.inbox.deleteMessage(id) }
+    }
+
+    fun forgetImportRule(key: String) {
+        viewModelScope.launch { repository.inbox.forgetRule(key) }
+    }
+
     fun addFinanceTransaction(value: FinanceTransactionEntity) {
         viewModelScope.launch { repository.planning.addFinanceTransaction(value) }
     }
 
     fun setExpenseCategory(id: Int, categoryId: Int?) {
-        viewModelScope.launch { repository.planning.setExpenseCategory(id, categoryId) }
+        viewModelScope.launch { repository.inbox.setFinancialCategory(id, categoryId) }
     }
 
     fun deleteFinanceTransaction(id: Int) {
-        viewModelScope.launch { repository.planning.deleteFinanceTransaction(id) }
+        viewModelScope.launch { repository.inbox.deleteFinancialTransaction(id) }
     }
 
     fun saveCategory(value: com.anasikus.lifeassistant.data.EventCategoryEntity) {
