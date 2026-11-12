@@ -195,6 +195,14 @@ abstract class AppDatabase : RoomDatabase() {
                     "life_assistant_database"
                 )
                     .addCallback(object : RoomDatabase.Callback() {
+                        override fun onOpen(db: SupportSQLiteDatabase) {
+                            val preferences = context.applicationContext.getSharedPreferences("data_cleanup", Context.MODE_PRIVATE)
+                            if (!preferences.getBoolean("legacy_sample_tasks_removed", false)) {
+                                db.execSQL(LegacySampleTasks.DELETE_UNCHANGED)
+                                preferences.edit().putBoolean("legacy_sample_tasks_removed", true).apply()
+                            }
+                        }
+
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             listOf("Личное" to "GENERAL", "Работа" to "WORK", "Подработка" to "SIDE_JOB", "Праздники" to "HOLIDAY").forEach { (name, kind) ->
                                 db.execSQL("INSERT INTO event_categories(name, kind) VALUES (?, ?)", arrayOf(name, kind))

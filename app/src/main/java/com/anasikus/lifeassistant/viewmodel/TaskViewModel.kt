@@ -8,7 +8,6 @@ import com.anasikus.lifeassistant.domain.TaskRules
 import com.anasikus.lifeassistant.repository.TaskRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -22,38 +21,6 @@ class TaskViewModel(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList()
         )
-
-    fun initializeSampleTasks() {
-        viewModelScope.launch {
-            if (repository.allTasks.first().isEmpty()) {
-                val today = TaskRules.today()
-
-                repository.addTask(
-                    TaskEntity(
-                        title = "Изучить Kotlin",
-                        startDate = today,
-                        deadline = today
-                    )
-                )
-
-                repository.addTask(
-                    TaskEntity(
-                        title = "Составить план на день",
-                        startDate = today,
-                        deadline = today
-                    )
-                )
-
-                repository.addTask(
-                    TaskEntity(
-                        title = "Отдохнуть после работы",
-                        startDate = today,
-                        deadline = today
-                    )
-                )
-            }
-        }
-    }
 
     fun addTask(task: TaskEntity) {
         viewModelScope.launch {

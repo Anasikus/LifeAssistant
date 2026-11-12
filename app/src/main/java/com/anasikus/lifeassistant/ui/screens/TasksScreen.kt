@@ -20,7 +20,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,10 +57,6 @@ fun TasksScreen(
     var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
     var selectedTask by remember { mutableStateOf<TaskEntity?>(null) }
     var taskToDelete by remember { mutableStateOf<TaskEntity?>(null) }
-
-    LaunchedEffect(viewModel) {
-        viewModel.initializeSampleTasks()
-    }
 
     val completedCount = tasks.count { it.completed }
 
