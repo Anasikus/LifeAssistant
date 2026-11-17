@@ -76,4 +76,29 @@ class FinanceMessageParserTest {
         assertFalse(FinanceMessageParser.matchesFilter(".*", "900", "Перевод +50р"))
         assertFalse(FinanceMessageParser.matchesFilter(" ", "900", "Перевод +50р"))
     }
+
+    @Test fun incomingTransfersUseCounterpartyRules() {
+        val own = FinanceMessageParser.message("900", "Счет карты 1234 перевод по СБП +50р от АНАСТАСИЯ Д. Баланс: 100р")
+        assertTrue(own.transfer)
+        assertEquals("АНАСТАСИЯ Д", own.counterparty)
+        assertTrue(FinanceMessageParser.parse("Перевод +50р от АНАСТАСИЯ Д. Назначение: оплата продуктов").transfer)
+        assertEquals(5000L, own.preferredAmount!!)
+        assertTrue(FinanceMessageParser.message("АНАСТАСИЯ Д.", "Пополнение 50р").transfer)
+        val salary = FinanceMessageParser.message("900", "Счет карты 1234 перевод по СБП +50р от АЛИМ Г. Баланс: 100р")
+        assertFalse(salary.transfer)
+        assertEquals(true, salary.income)
+        val titleSender = FinanceMessageParser.message("АЛИМ Г.", "Перевод +50р")
+        assertFalse(titleSender.transfer)
+        assertEquals(true, titleSender.income)
+        assertFalse(FinanceMessageParser.parse("Перевод +50р от Алим\u00a0Г.").transfer)
+    }
+
+    @Test fun recipientAndPurchaseDoNotBecomeIncomingSalary() {
+        val outgoing = FinanceMessageParser.parse("Счет карты 1234 перевод -50р получателю АЛИМ Г. Баланс: 0р")
+        assertFalse(outgoing.transfer)
+        assertEquals(false, outgoing.income)
+        val purchase = FinanceMessageParser.parse("Покупка 50р у АЛИМ Г. Баланс: 100р")
+        assertFalse(purchase.transfer)
+        assertEquals(false, purchase.income)
+    }
 }

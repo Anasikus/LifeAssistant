@@ -67,6 +67,7 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
         transactions.filter { it.date in month..cutoff }
     }
     val paymentsThroughCutoff = remember(transactions, cutoff) { transactions.filter { it.date <= cutoff } }
+    var newTransfer by remember { mutableStateOf(false) }
     var newIncome by remember { mutableStateOf<Boolean?>(null) }
     var deleting by remember { mutableStateOf<FinanceTransactionEntity?>(null) }
 
@@ -115,8 +116,9 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
                 Text("Перенос на начало месяца: ${ShiftRules.money(totals.openingCash)}", color = AppColors.SecondaryText)
                 Text("Заработано — начисления за завершённые смены и подработки за вычетом выплат по ним.", color = AppColors.SecondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { newIncome = true }, modifier = Modifier.weight(1f)) { Text("Доход") }
-                    OutlinedButton(onClick = { newIncome = false }, modifier = Modifier.weight(1f)) { Text("Расход") }
+                    Button(onClick = { newTransfer = false; newIncome = true }, modifier = Modifier.weight(1f)) { Text("Доход") }
+                    OutlinedButton(onClick = { newTransfer = false; newIncome = false }, modifier = Modifier.weight(1f)) { Text("Расход") }
+                    OutlinedButton(onClick = { newTransfer = true; newIncome = false }, modifier = Modifier.weight(1f)) { Text("Перевод", maxLines = 1) }
                 }
             }
             item {
@@ -142,10 +144,11 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
             items(monthTransactions, key = { it.id }) { transaction ->
                 Card(colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                        val sign = if (transaction.income) "+" else "−"
-                        Text("$sign${ShiftRules.money(transaction.amountCents)}", color = if (transaction.income) AppColors.Green else AppColors.Red)
+                        val sign = if (transaction.transfer) "↔ " else if (transaction.income) "+" else "−"
+                        Text("$sign${ShiftRules.money(transaction.amountCents)}", color = if (transaction.transfer) AppColors.SecondaryText else if (transaction.income) AppColors.Green else AppColors.Red)
+                        if (transaction.transfer) Text("Перевод · не влияет на остаток", color = AppColors.SecondaryText)
                         Text(CalendarDateUtils.formatDate(transaction.date), color = AppColors.SecondaryText)
-                        if (!transaction.income) {
+                        if (!transaction.income && !transaction.transfer) {
                             ExpenseCategoryPicker(categories, transaction.expenseCategoryId) {
                                 viewModel.setExpenseCategory(transaction.id, it)
                             }
@@ -161,7 +164,7 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
         if (showCategories) ExpenseCategoriesDialog(viewModel) { showCategories = false }
         if (showStatistics) FinanceStatisticsDialog(transactions, categories, month, cutoff) { showStatistics = false }
         newIncome?.let { income ->
-            TransactionDialog(income, sources, categories, today, if (monthEnd < today) month else today, onDismiss = { newIncome = null }) {
+            TransactionDialog(income, sources, categories, today, if (monthEnd < today) month else today, newTransfer, onDismiss = { newIncome = null }) {
                 viewModel.addFinanceTransaction(it)
                 newIncome = null
             }
@@ -199,6 +202,7 @@ private fun TransactionDialog(
     categories: List<ExpenseCategoryEntity>,
     today: String,
     initialDate: String,
+    transfer: Boolean,
     onDismiss: () -> Unit,
     onSave: (FinanceTransactionEntity) -> Unit
 ) {
@@ -211,15 +215,16 @@ private fun TransactionDialog(
     val cents = ShiftRules.cents(amount)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (income) "Добавить доход" else "Добавить расход") },
+        title = { Text(if (transfer) "Добавить перевод" else if (income) "Добавить доход" else "Добавить расход") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(amount, { amount = it }, label = { Text("Сумма, ₽") }, singleLine = true)
                 OutlinedTextField(note, { note = it }, label = { Text("Комментарий") })
                 PlanningDateField("Дата операции", date) { date = it }
                 if (date > today) Text("Укажи дату не позднее сегодняшней", color = AppColors.Red)
-                if (!income) ExpenseCategoryPicker(categories, categoryId) { categoryId = it }
-                if (income) {
+                if (!income && !transfer) ExpenseCategoryPicker(categories, categoryId) { categoryId = it }
+                if (transfer) Text("Перевод сохранится в истории без изменения дохода, расхода и остатка.")
+                if (income && !transfer) {
                     Box {
                         OutlinedButton(onClick = { menu = true }) {
                             Text(selected?.name ?: "Прочий доход")
@@ -240,12 +245,12 @@ private fun TransactionDialog(
                 onClick = {
                     onSave(FinanceTransactionEntity(
                         date = date,
-                        income = income,
+                        income = income && !transfer, transfer = transfer,
                         amountCents = checkNotNull(cents),
                         note = note.trim(),
-                        sourceKey = selected?.key,
-                        sourceName = selected?.name,
-                        expenseCategoryId = if (income) null else categoryId
+                        sourceKey = if (income && !transfer) selected?.key else null,
+                        sourceName = if (income && !transfer) selected?.name else null,
+                        expenseCategoryId = if (income || transfer) null else categoryId
                     ))
                 }
             ) { Text("Сохранить") }

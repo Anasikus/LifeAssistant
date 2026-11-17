@@ -120,7 +120,7 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
                         Text(message.body, maxLines = 5, color = AppColors.SecondaryText)
                         Text(CalendarDateUtils.formatDate(FinanceMessageParser.date(message.receivedAt)), color = AppColors.SecondaryText)
                         message.proposedAmountCents?.let { amount ->
-                            val direction = when (message.proposedIncome) { true -> "Доход"; false -> "Расход"; null -> "Уточни тип операции" }
+                            val direction = if (message.proposedTransfer) "Перевод" else when (message.proposedIncome) { true -> "Доход"; false -> "Расход"; null -> "Уточни тип операции" }
                             Text("$direction · ${ShiftRules.money(amount)}", color = AppColors.MainText)
                         }
                         if (message.automatic) Text("Добавлено по твоему правилу", color = AppColors.Green)
@@ -137,8 +137,8 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
         selected?.let { message ->
             ReviewMessageDialog(message, rules.find { it.key == message.ruleKey }, categories, sources, error,
                 onKeep = { title, body -> viewModel.keepInbox(message.id, title, body) { selected = null; filter = "SAVED" } },
-                onDismiss = { selected = null }) { title, body, income, amount, date, category, source, learn, textFilter ->
-                viewModel.confirmInbox(message.id, title, body, income, amount, date, category, source?.key, source?.name, learn, textFilter) { selected = null; filter = "POSTED" }
+                onDismiss = { selected = null }) { title, body, income, amount, date, category, source, learn, textFilter, transfer ->
+                viewModel.confirmInbox(message.id, title, body, income, amount, date, category, source?.key, source?.name, learn, textFilter, transfer) { selected = null; filter = "POSTED" }
             }
         }
         ignoring?.let { message ->
@@ -197,13 +197,17 @@ private fun ReviewMessageDialog(
     error: String?,
     onKeep: (String, String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Boolean, Long, String, Int?, FinanceSource?, Boolean, String?) -> Unit
+    onConfirm: (String, String, Boolean, Long, String, Int?, FinanceSource?, Boolean, String?, Boolean) -> Unit
 ) {
     var step by remember(message.id) { mutableStateOf(0) }
     var title by remember(message.id) { mutableStateOf(message.title) }
     var body by remember(message.id) { mutableStateOf(message.body) }
     val reparsed = remember(message.id) { FinanceMessageParser.message(message.title, message.body, message.source) }
     var income by remember(message.id) { mutableStateOf(message.proposedIncome ?: reparsed.income) }
+    var transfer by remember(message.id) { mutableStateOf(
+        if (message.status == "POSTED" || existingRule?.transfer != null) message.proposedTransfer
+        else message.proposedTransfer || reparsed.transfer
+    ) }
     var amount by remember(message.id) { mutableStateOf((message.proposedAmountCents ?: reparsed.preferredAmount)?.let { java.math.BigDecimal.valueOf(it, 2).toPlainString() }.orEmpty()) }
     var date by remember(message.id) { mutableStateOf(message.transactionDate ?: FinanceMessageParser.date(message.receivedAt)) }
     var category by remember(message.id) { mutableStateOf(message.expenseCategoryId) }
@@ -225,20 +229,22 @@ private fun ReviewMessageDialog(
                     TextButton(onClick = {
                         val parsed = FinanceMessageParser.message(title, body, message.source)
                         income = parsed.income
+                        transfer = parsed.transfer
                         amount = parsed.preferredAmount?.let { java.math.BigDecimal.valueOf(it, 2).toPlainString() }.orEmpty()
                     }) { Text("Разобрать текст заново") }
-                    FinanceDirectionButtons(income) { income = it }
+                    FinanceDirectionButtons(income, transfer) { nextIncome, nextTransfer -> income = nextIncome; transfer = nextTransfer }
                     OutlinedTextField(amount, { amount = it }, label = { Text("Сумма, ₽") }, singleLine = true)
                     PlanningDateField("Дата операции", date) { date = it }
                     if (message.possibleDuplicate) Text("Проверь похожую операцию в истории перед подтверждением.", color = AppColors.Yellow)
                     TextButton(onClick = { onKeep(title, body) }) { Text("Сохранить без операции в финансах") }
-                    if (message.body.contains("перевод", ignoreCase = true)) Text("Перевод между своими счетами можно сохранить без операции, чтобы он не увеличивал доход или расход.", color = AppColors.SecondaryText)
+                    if (message.body.contains("перевод", ignoreCase = true)) Text("Тип «Перевод» сохраняет операцию в истории, но не меняет доход, расход и остаток.", color = AppColors.SecondaryText)
                     if (message.source == "EMAIL" && cents == null) Text("В заголовке нет суммы. Для Ozon пока введи итог из чека вручную.", color = AppColors.Yellow)
                     Text("Автоматическая дата — день получения сообщения. Проверь направление и сумму. Если валюта другая, введи сумму в рублях вручную.", color = AppColors.SecondaryText)
                 } else {
-                    Text("${if (income == true) "Доход" else "Расход"} · ${ShiftRules.money(cents ?: 0)}")
-                    if (income == false) ExpenseCategoryPicker(categories, category) { category = it }
-                    else {
+                    Text("${if (transfer) "Перевод" else if (income == true) "Доход" else "Расход"} · ${ShiftRules.money(cents ?: 0)}")
+                    if (transfer) Text("Не учитывается в доходах, расходах, остатке и выплатах по работам.")
+                    if (!transfer && income == false) ExpenseCategoryPicker(categories, category) { category = it }
+                    else if (!transfer) {
                         Box {
                             OutlinedButton(onClick = { sourceMenu = true }) { Text(source?.name ?: "Прочий доход") }
                             DropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
@@ -247,7 +253,7 @@ private fun ReviewMessageDialog(
                             }
                         }
                     }
-                    if (income == true) OutlinedTextField(customIncome, {
+                    if (!transfer && income == true) OutlinedTextField(customIncome, {
                         customIncome = it
                         if (it.isNotBlank()) source = null
                     }, label = { Text("Своя категория дохода (необязательно)") }, singleLine = true)
@@ -269,10 +275,10 @@ private fun ReviewMessageDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = income != null && cents != null && cents > 0 && date <= CalendarDateUtils.today() && filterValid, onClick = {
-                if (step == 0) step = 1 else onConfirm(title, body, checkNotNull(income), checkNotNull(cents), date, category,
+            TextButton(enabled = (income != null || transfer) && cents != null && cents > 0 && date <= CalendarDateUtils.today() && filterValid, onClick = {
+                if (step == 0) step = 1 else onConfirm(title, body, if (transfer) false else checkNotNull(income), checkNotNull(cents), date, category,
                     if (customIncome.isNotBlank()) FinanceSource("income:" + FinanceMessageParser.hash(customIncome.trim().lowercase(java.util.Locale.ROOT)), customIncome.trim(), 0L) else source,
-                    learn, textFilter.takeIf { it.isNotBlank() })
+                    learn, textFilter.takeIf { it.isNotBlank() }, transfer)
             }) { Text(if (step == 0) "Да, всё верно" else "Сохранить") }
         },
         dismissButton = { TextButton(onClick = { if (step > 0) step = 0 else onDismiss() }) { Text(if (step > 0) "Назад" else "Отмена") } }
@@ -360,7 +366,7 @@ private fun ImportRulesDialog(rules: List<FinanceImportRuleEntity>, categories: 
                     Text("${sourceLabel(rule.source)} · ${rule.sender}")
                     Text(when (rule.action) { "IGNORE" -> "Пропускать"; "AUTO" -> "Учитывать автоматически"; "KEEP" -> "Сохранять как нужное без операции"; "FINANCIAL" -> "Финансовый отправитель"; "BLOCK_SENDER" -> "Не собирать сообщения отправителя"; else -> "Проверять вручную" })
                     if (rule.income != null) {
-                        Text(if (rule.income) "Доход · ${rule.incomeSourceName ?: "Прочий доход"}"
+                        Text(if (rule.transfer == true) "Перевод · без влияния на баланс" else if (rule.income) "Доход · ${rule.incomeSourceName ?: "Прочий доход"}"
                             else "Расход · ${categories.find { it.id == rule.expenseCategoryId }?.name ?: "Без категории"}")
                     }
                     rule.bankName?.let { Text("Банк: $it") }
@@ -424,15 +430,17 @@ private fun sourceLabel(source: String): String = when (source) {
 
 
 @Composable
-private fun FinanceDirectionButtons(income: Boolean?, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(false to "Расход", true to "Доход").forEach { (value, label) ->
+private fun FinanceDirectionButtons(income: Boolean?, transfer: Boolean, onChange: (Boolean, Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(Triple(false, false, "Расход"), Triple(true, false, "Доход"), Triple(false, true, "Перевод")).forEach { (value, neutral, label) ->
+            val active = if (neutral) transfer else !transfer && income == value
             OutlinedButton(
-                onClick = { onChange(value) },
-                modifier = Modifier.weight(1f).semantics { selected = income == value },
-                border = BorderStroke(1.dp, if (income == value) Color.White else Color.Gray),
+                onClick = { onChange(value, neutral) },
+                modifier = Modifier.weight(1f).semantics { selected = active },
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                border = BorderStroke(1.dp, if (active) Color.White else Color.Gray),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.MainText)
-            ) { Text(label) }
+            ) { Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false) }
         }
     }
 }

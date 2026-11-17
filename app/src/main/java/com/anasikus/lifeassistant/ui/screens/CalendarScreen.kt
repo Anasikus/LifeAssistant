@@ -178,7 +178,7 @@ fun CalendarScreen(
         )
     }
     val paymentBlocks = remember(paymentPlans, financeTransactions, displayStart, displayEnd) {
-        val paid = financeTransactions.mapNotNull { it.planKey }.toSet()
+        val paid = financeTransactions.filter { !it.transfer && !it.income }.mapNotNull { it.planKey }.toSet()
         paymentPlans.flatMap { PaymentPlanRules.between(it, displayStart, displayEnd) }
             .mapIndexed { index, payment ->
                 val status = if (payment.key in paid) "Оплачено" else "Платёж"

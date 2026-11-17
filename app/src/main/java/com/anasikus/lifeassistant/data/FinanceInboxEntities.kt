@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -26,7 +27,8 @@ data class FinanceInboxEntity(
     val incomeSourceName: String? = null,
     val automatic: Boolean = false,
     val possibleDuplicate: Boolean = false,
-    val transactionDate: String? = null
+    val transactionDate: String? = null,
+    @ColumnInfo(defaultValue = "0") val proposedTransfer: Boolean = false
 )
 
 @Entity(tableName = "finance_import_rules")
@@ -43,5 +45,7 @@ data class FinanceImportRuleEntity(
     val incomeSourceKey: String? = null,
     val incomeSourceName: String? = null,
     val bankName: String? = null,
-    val textFilter: String? = null
+    val textFilter: String? = null,
+    /** Null means a legacy two-type rule; use the new parser suggestion. */
+    val transfer: Boolean? = null
 )

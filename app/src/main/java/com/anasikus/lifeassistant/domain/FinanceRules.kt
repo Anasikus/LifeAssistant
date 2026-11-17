@@ -81,7 +81,7 @@ object FinanceRules {
     }
 
     fun outstanding(source: FinanceSource, payments: List<FinanceTransactionEntity>): Long {
-        val paid = payments.filter { it.income && it.sourceKey == source.key }.sumOf { it.amountCents }
+        val paid = payments.filter { !it.transfer && it.income && it.sourceKey == source.key }.sumOf { it.amountCents }
         return source.accrued - paid
     }
 
@@ -95,14 +95,14 @@ object FinanceRules {
         val (previous, current) = throughCutoff.partition { it.date < monthStart }
         return totals(sources, current).copy(
             earned = sources.sumOf { outstanding(it, throughCutoff) },
-            openingCash = previous.sumOf { if (it.income) it.amountCents else -it.amountCents }
+            openingCash = previous.filterNot { it.transfer }.sumOf { if (it.income) it.amountCents else -it.amountCents }
         )
     }
 
     fun totals(sources: List<FinanceSource>, payments: List<FinanceTransactionEntity>): FinanceTotals =
         FinanceTotals(
             earned = sources.sumOf { outstanding(it, payments) },
-            income = payments.filter { it.income }.sumOf { it.amountCents },
-            expense = payments.filterNot { it.income }.sumOf { it.amountCents }
+            income = payments.filter { !it.transfer && it.income }.sumOf { it.amountCents },
+            expense = payments.filter { !it.transfer && !it.income }.sumOf { it.amountCents }
         )
 }

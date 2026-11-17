@@ -94,7 +94,7 @@ fun PaymentPlansDialog(viewModel: CalendarViewModel, selectedDate: String, onDis
     val plans by viewModel.paymentPlans.collectAsState()
     val categories by viewModel.expenseCategories.collectAsState()
     val transactions by viewModel.financeTransactions.collectAsState()
-    val paid = transactions.mapNotNull { it.planKey }.toSet()
+    val paid = transactions.filter { !it.transfer && !it.income }.mapNotNull { it.planKey }.toSet()
     val today = CalendarDateUtils.today()
     var month by remember(selectedDate) { mutableStateOf(CalendarDateUtils.startOfMonth(selectedDate)) }
     var editing by remember { mutableStateOf<PaymentPlanEntity?>(null) }
@@ -230,9 +230,9 @@ fun FinanceStatisticsDialog(
     var menu by remember { mutableStateOf(false) }
     val start = if (months == 0) CalendarDateUtils.addDays(cutoff, -6) else CalendarDateUtils.addMonths(month, 1 - months)
     val rows = transactions.filter { it.date in start..cutoff }
-    val expenses = rows.filterNot { it.income }.groupingBy { it.expenseCategoryId }
+    val expenses = rows.filter { !it.transfer && !it.income }.groupingBy { it.expenseCategoryId }
         .fold(0L) { total, entry -> total + entry.amountCents }
-    val incomes = rows.filter { it.income }.groupingBy { it.sourceName ?: "Прочий доход" }
+    val incomes = rows.filter { !it.transfer && it.income }.groupingBy { it.sourceName ?: "Прочий доход" }
         .fold(0L) { total, entry -> total + entry.amountCents }
     AlertDialog(
         onDismissRequest = onDismiss,

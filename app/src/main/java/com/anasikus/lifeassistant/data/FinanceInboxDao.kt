@@ -117,7 +117,7 @@ interface FinanceInboxDao {
         // A broad text rule must also agree with the detected direction. Two matches require review.
         val matching = filteredRules(value.source, value.sender).filter {
             it.action in listOf("AUTO", "IGNORE", "KEEP") &&
-                ((it.action == "IGNORE" && it.income == null) || (it.income == parsed.income && parsed.income != null)) &&
+                ((it.action == "IGNORE" && it.income == null) || it.transfer == true || (it.income == parsed.income && parsed.income != null)) &&
                 FinanceMessageParser.matchesFilter(it.textFilter.orEmpty(), value.title, value.body)
         }
         val learned = when {
@@ -129,18 +129,20 @@ interface FinanceInboxDao {
             else -> null
         }
         if (learned?.action == "IGNORE" && value.source != "MANUAL") return "TEMPLATE_IGNORED"
+        val transfer = learned?.transfer ?: parsed.transfer
+        val income = if (transfer) false else if (learned?.transfer == null && parsed.counterparty == "АЛИМ Г") true else learned?.income ?: parsed.income
         val automaticAmount = if (learned?.textFilter != null) parsed.preferredAmount else
             learned?.amountOrdinal?.let { parsed.amounts.getOrNull(it) }
                 ?.takeIf { !it.balance && it.cents > 0L }?.cents
         val amount = automaticAmount ?: parsed.preferredAmount
         val possibleDuplicate = amount?.let {
             nearMessages(it, value.receivedAt - 120_000L, value.receivedAt + 120_000L)
-                .any { prior -> prior.proposedIncome == (learned?.income ?: parsed.income) }
+                .any { prior -> prior.proposedTransfer == transfer && prior.proposedIncome == income }
         } ?: false
         val id = insertMessage(value.copy(
             ruleKey = learned?.key ?: value.ruleKey,
             status = if (learned?.action == "KEEP") "SAVED" else "PENDING",
-            proposedIncome = learned?.income ?: parsed.income,
+            proposedIncome = income, proposedTransfer = transfer,
             proposedAmountCents = amount,
             expenseCategoryId = learned?.expenseCategoryId,
             incomeSourceKey = learned?.incomeSourceKey,
@@ -148,14 +150,14 @@ interface FinanceInboxDao {
             possibleDuplicate = possibleDuplicate
         ))
         if (id <= 0L) return "ALREADY_STORED"
-        val categoryValid = learned?.expenseCategoryId?.let { categoryExists(it) == 1 } ?: true
-        if (value.source != "MANUAL" && learned?.action == "AUTO" && learned.income != null && automaticAmount != null &&
+        val categoryValid = transfer || income == true || (learned?.expenseCategoryId?.let { categoryExists(it) == 1 } ?: true)
+        if (value.source != "MANUAL" && learned?.action == "AUTO" && income != null && automaticAmount != null &&
             !possibleDuplicate && categoryValid
         ) {
             confirm(
-                id, value.title, value.body, learned.income, automaticAmount,
+                id, value.title, value.body, income, automaticAmount,
                 FinanceMessageParser.date(value.receivedAt), learned.expenseCategoryId,
-                learned.incomeSourceKey, learned.incomeSourceName, learn = false, automatic = true
+                learned.incomeSourceKey, learned.incomeSourceName, learn = false, automatic = true, transfer = transfer
             )
             return "POSTED"
         }
@@ -175,7 +177,8 @@ interface FinanceInboxDao {
         sourceName: String?,
         learn: Boolean,
         automatic: Boolean = false,
-        textFilter: String? = null
+        textFilter: String? = null,
+        transfer: Boolean = false
     ) {
         require(amount > 0L)
         require(date.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")))
@@ -183,12 +186,13 @@ interface FinanceInboxDao {
         com.anasikus.lifeassistant.domain.CalendarDateUtils.parseCalendar(date)
         val old = message(id) ?: return
         if (old.status == "DELETED") return
+        val isIncome = income && !transfer
         val filter = textFilter?.trim()?.takeIf { it.isNotEmpty() }
         require(filter == null || FinanceMessageParser.matchesFilter(filter, title, body))
         val priorRule = rule(old.ruleKey)
         val key = when {
             automatic -> old.ruleKey
-            filter != null -> "filter:" + FinanceMessageParser.hash(old.source + "\n" + old.sender + "\n" + income + "\n" + filter.lowercase(java.util.Locale.ROOT))
+            filter != null -> "filter:" + FinanceMessageParser.hash(old.source + "\n" + old.sender + "\n" + (if (transfer) "TRANSFER" else isIncome.toString()) + "\n" + filter.lowercase(java.util.Locale.ROOT))
             else -> FinanceMessageParser.ruleKey(old.source, old.sender, title, body)
         }
         val existing = transactionForMessage(id)
@@ -196,18 +200,18 @@ interface FinanceInboxDao {
         val entry = FinanceTransactionEntity(
             id = existing?.id ?: 0,
             date = date,
-            income = income,
+            income = isIncome, transfer = transfer,
             amountCents = amount,
             note = title.ifBlank { old.sender } + " · " + body.take(500),
-            sourceKey = if (income) sourceKey else null,
-            sourceName = if (income) sourceName else null,
-            expenseCategoryId = if (income) null else category,
+            sourceKey = if (isIncome) sourceKey else null,
+            sourceName = if (isIncome) sourceName else null,
+            expenseCategoryId = if (isIncome || transfer) null else category,
             inboxMessageId = id
         )
         if (existing == null) insertTransaction(entry) else updateTransaction(entry)
         updateMessage(old.copy(
             title = title, body = body, ruleKey = key, status = "POSTED",
-            proposedIncome = income, proposedAmountCents = amount,
+            proposedIncome = isIncome, proposedTransfer = transfer, proposedAmountCents = amount,
             expenseCategoryId = entry.expenseCategoryId, incomeSourceKey = entry.sourceKey,
             incomeSourceName = entry.sourceName, automatic = automatic, transactionDate = date
         ))
@@ -220,7 +224,7 @@ interface FinanceInboxDao {
                 key = key, source = old.source, sender = old.sender,
                 template = FinanceMessageParser.template(title, body),
                 action = if (ordinal == null || old.source == "MANUAL") "REVIEW" else "AUTO",
-                income = income, amountOrdinal = ordinal,
+                income = isIncome, transfer = transfer, amountOrdinal = ordinal,
                 expenseCategoryId = entry.expenseCategoryId,
                 incomeSourceKey = entry.sourceKey, incomeSourceName = entry.sourceName,
                 bankName = rule(FinanceMessageParser.senderKey(old.source, old.sender))?.bankName ?: priorRule?.bankName,
@@ -257,7 +261,7 @@ interface FinanceInboxDao {
                 candidate.id != id && (candidate.ruleKey == old.ruleKey ||
                     FinanceMessageParser.template(candidate.title, candidate.body) == ignoredRule.template ||
                     (ignoredRule.textFilter != null &&
-                        (ignoredRule.income == null || ignoredRule.income == FinanceMessageParser.message(candidate.title, candidate.body, candidate.source).income) &&
+                        (ignoredRule.income == null || ignoredRule.transfer == true || ignoredRule.income == FinanceMessageParser.message(candidate.title, candidate.body, candidate.source).income) &&
                         FinanceMessageParser.matchesFilter(ignoredRule.textFilter, candidate.title, candidate.body)))
             }.map { it.id }
             // Stay below SQLite's bind parameter limit even for thousands of messages.
@@ -287,7 +291,7 @@ interface FinanceInboxDao {
 
     @Transaction
     suspend fun setFinancialCategory(id: Int, categoryId: Int?) {
-        val entry = financialTransaction(id)?.takeUnless { it.income } ?: return
+        val entry = financialTransaction(id)?.takeUnless { it.income || it.transfer } ?: return
         val category = categoryId?.takeIf { categoryExists(it) == 1 }
         updateTransaction(entry.copy(expenseCategoryId = category))
         entry.inboxMessageId?.let { inboxId ->

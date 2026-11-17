@@ -7,7 +7,7 @@ import java.util.Locale
 
 object FinanceMessageParser {
     data class Amount(val cents: Long, val balance: Boolean)
-    data class Parsed(val income: Boolean?, val amounts: List<Amount>, val preferredOrdinal: Int?) {
+    data class Parsed(val income: Boolean?, val amounts: List<Amount>, val preferredOrdinal: Int?, val transfer: Boolean = false, val counterparty: String? = null) {
         val preferredAmount: Long? get() = preferredOrdinal?.let { amounts.getOrNull(it)?.cents }
     }
 
@@ -41,7 +41,16 @@ object FinanceMessageParser {
             !incomingMatch && (unsignedCardTransfer || receipt) -> false
             else -> null
         }
-        return Parsed(income, amounts, primary.singleOrNull())
+        val transferMessage = Regex("(?iu)перевод").containsMatchIn(primaryText)
+        // Match the sender after «от» or as a standalone notification heading,
+        // never a recipient in an outgoing payment or a partial name.
+        val person = Regex("(?imu)(?:^|(?<![\\p{L}])от[\\s\\u00a0\\u202f]+)(АНАСТАСИЯ[\\s\\u00a0\\u202f]+Д|АЛИМ[\\s\\u00a0\\u202f]+Г)\\.?(?![\\p{L}\\p{N}])")
+            .find(primaryText)?.groupValues?.get(1)?.uppercase(Locale.ROOT)?.replace(Regex("[\\s\\u00a0\\u202f]+"), " ")
+        val incomingPerson = person.takeIf { signed != '-' && (signed == '+' || (!outgoingMatch && (transferMessage || incomingMatch))) }
+        val fromAlim = incomingPerson == "АЛИМ Г"
+        val ownTransfer = person == "АНАСТАСИЯ Д" && (transferMessage || incomingMatch || signed == '+' || signed == '-')
+        return Parsed(if (fromAlim) true else income, amounts, primary.singleOrNull(),
+            transfer = ownTransfer, counterparty = if (ownTransfer) person else incomingPerson)
     }
 
     /** Receipt subject takes priority over item prices and totals in the preview. */
@@ -59,7 +68,10 @@ object FinanceMessageParser {
         val fromBody = parse(body)
         val combined = parse(title + "\n" + body)
         val chosen = if (fromBody.amounts.any { !it.balance }) fromBody else combined
-        return chosen.copy(income = chosen.income ?: combined.income)
+        return chosen.copy(
+            income = if (combined.counterparty == "АЛИМ Г") true else chosen.income ?: combined.income,
+            transfer = combined.transfer, counterparty = combined.counterparty
+        )
     }
 
     fun template(title: String, body: String): String = (title + "\n" + body)

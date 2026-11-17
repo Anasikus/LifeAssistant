@@ -46,4 +46,22 @@ class FinanceRulesTest {
         assertEquals(5000L, result.income)
         assertEquals(-15000L, result.cash)
     }
+
+    @Test fun transfersDoNotAffectTotalsCarryOrOutstandingEvenWhenLinkedToWork() {
+        val job = FinanceSource("job", "Работа", 30000)
+        val rows = listOf(
+            FinanceTransactionEntity(date = "2026-10-30", income = true, amountCents = 3000, note = "", sourceKey = "job"),
+            FinanceTransactionEntity(date = "2026-10-30", income = false, amountCents = 5000, note = ""),
+            FinanceTransactionEntity(date = "2026-10-31", income = true, amountCents = 90000, note = "", sourceKey = "job", transfer = true),
+            FinanceTransactionEntity(date = "2026-11-01", income = true, amountCents = 10000, note = "", sourceKey = "job"),
+            FinanceTransactionEntity(date = "2026-11-01", income = false, amountCents = 2000, note = ""),
+            FinanceTransactionEntity(date = "2026-11-02", income = false, amountCents = 80000, note = "", transfer = true)
+        )
+        val result = FinanceRules.monthTotals(listOf(job), rows, "2026-11-01", "2026-11-17")
+        assertEquals(17000L, result.earned)
+        assertEquals(-2000L, result.openingCash)
+        assertEquals(10000L, result.income)
+        assertEquals(2000L, result.expense)
+        assertEquals(6000L, result.cash)
+    }
 }

@@ -85,11 +85,11 @@ class CalendarViewModel(
     fun confirmInbox(
         id: Long, title: String, body: String, income: Boolean, amount: Long, date: String,
         categoryId: Int?, sourceKey: String?, sourceName: String?, learn: Boolean,
-        textFilter: String? = null, onSaved: () -> Unit
+        textFilter: String? = null, transfer: Boolean = false, onSaved: () -> Unit
     ) {
         viewModelScope.launch {
             try {
-                repository.inbox.confirm(id, title, body, income, amount, date, categoryId, sourceKey, sourceName, learn, textFilter = textFilter)
+                repository.inbox.confirm(id, title, body, income, amount, date, categoryId, sourceKey, sourceName, learn, textFilter = textFilter, transfer = transfer)
                 inboxError.value = null
                 onSaved()
             } catch (error: Exception) {

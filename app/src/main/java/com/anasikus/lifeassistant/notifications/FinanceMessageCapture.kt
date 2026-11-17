@@ -62,6 +62,9 @@ object FinanceCaptureSettings {
     fun setConnected(context: Context, connected: Boolean) { preferences(context).edit().putBoolean("listener_connected", connected).apply() }
     fun isConnected(context: Context): Boolean = preferences(context).getBoolean("listener_connected", false)
     fun reconnect(context: Context) {
+        // Permission alone does not prove that Android is still delivering events.
+        // Clear the cached status and let the live service acknowledge the probe.
+        setConnected(context, false)
         if (!hasNotificationAccess(context)) return
         try {
             context.sendBroadcast(Intent(REFRESH_ACTION).setPackage(context.packageName))
@@ -134,6 +137,8 @@ class FinanceNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName == packageName) return
+        connected = true
+        FinanceCaptureSettings.setConnected(this, true)
         FinanceCaptureSettings.pushSeen(this, sbn.packageName)
         scope.launch { captureNotification(sbn) }
     }
@@ -150,9 +155,14 @@ class FinanceNotificationListener : NotificationListenerService() {
         // notifications still visible; eventKey prevents importing the same event twice.
         try {
             val outstanding = activeNotifications?.sortedBy { it.postTime }.orEmpty()
+            connected = true
+            FinanceCaptureSettings.setConnected(this, true)
             scope.launch { outstanding.forEach { captureNotification(it) } }
         } catch (error: Exception) {
+            connected = false
+            FinanceCaptureSettings.setConnected(this, false)
             FinanceCaptureSettings.failed(this, "NOTIFICATION", error)
+            FinanceCaptureSettings.reconnect(this)
             Log.w("FinanceCapture", "Unable to recover active notifications", error)
         }
     }

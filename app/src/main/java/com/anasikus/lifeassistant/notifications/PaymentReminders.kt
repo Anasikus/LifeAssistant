@@ -56,7 +56,7 @@ object PaymentReminders {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (!manager.areNotificationsEnabled()) return
         val prefs = context.getSharedPreferences("payment_reminders", Context.MODE_PRIVATE)
-        val paid = transactions.mapNotNull { it.planKey }.toSet()
+        val paid = transactions.filter { !it.transfer && !it.income }.mapNotNull { it.planKey }.toSet()
         val today = CalendarDateUtils.today()
         val now = System.currentTimeMillis()
         var next: Long? = null

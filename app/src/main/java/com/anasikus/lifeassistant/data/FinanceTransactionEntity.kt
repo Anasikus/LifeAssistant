@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -15,5 +16,6 @@ data class FinanceTransactionEntity(
     val sourceName: String? = null,
     val expenseCategoryId: Int? = null,
     val planKey: String? = null,
-    val inboxMessageId: Long? = null
+    val inboxMessageId: Long? = null,
+    @ColumnInfo(defaultValue = "0") val transfer: Boolean = false
 )
