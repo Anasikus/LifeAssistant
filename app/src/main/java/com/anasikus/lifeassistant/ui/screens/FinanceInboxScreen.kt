@@ -148,10 +148,10 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
                     Text("Выбранное сообщение останется в «Не нужно». «Удалить похожие» очистит остальные неучтённые сообщения этого шаблона от того же отправителя и отключит их дальнейший сбор. Другие учтённые операции сохранятся. Операция выбранного сообщения, если она есть, будет удалена.")
                     error?.let { Text(it, color = AppColors.Red) }
                 } },
-                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true) { ignoring = null; filter = "IGNORED" } }) { Text("Удалить похожие") } },
+                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true) { ignoring = null } }) { Text("Удалить похожие") } },
                 dismissButton = {
                     Row {
-                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false) { ignoring = null; filter = "IGNORED" } }) { Text("Только это") }
+                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false) { ignoring = null } }) { Text("Только это") }
                         TextButton(onClick = { ignoring = null }) { Text("Отмена") }
                     }
                 }
