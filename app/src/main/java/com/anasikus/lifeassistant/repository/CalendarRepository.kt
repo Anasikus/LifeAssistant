@@ -44,7 +44,7 @@ class CalendarRepository(
     suspend fun savePlacement(
         placement: CalendarTaskPlacementEntity
     ) {
-        placementDao.save(placement)
+        placementDao.saveWithEstimate(placement)
     }
 
     suspend fun deletePlacement(taskId: Int) {

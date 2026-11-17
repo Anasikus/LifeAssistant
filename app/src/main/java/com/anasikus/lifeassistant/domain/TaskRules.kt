@@ -42,35 +42,40 @@ object TaskRules {
         return calendar
     }
 
-    fun isOverdue(task: TaskEntity): Boolean {
+    fun isOverdue(task: TaskEntity, today: String = TaskRules.today()): Boolean {
         return !task.completed &&
                 task.deadline.isNotBlank() &&
-                task.deadline < today()
+                task.deadline < today
     }
 
-    fun isDueSoon(task: TaskEntity): Boolean {
-        if (task.completed || task.deadline.isBlank()) {
-            return false
-        }
+    fun isDueSoon(task: TaskEntity, today: String = TaskRules.today()): Boolean =
+        !task.completed && task.deadline.isNotBlank() &&
+            task.deadline >= today && task.deadline <= CalendarDateUtils.addDays(today, 3)
 
-        val today = today()
-
-        if (task.deadline < today) {
-            return false
-        }
-
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-
-        return runCatching {
-            val start = dateFormat.parse(today) ?: return false
-            val deadline = dateFormat.parse(task.deadline) ?: return false
-
-            val daysRemaining =
-                (deadline.time - start.time) / (24 * 60 * 60 * 1000)
-
-            daysRemaining in 0..3
-        }.getOrDefault(false)
+    fun priorityLabel(level: Int): String = when (level.coerceIn(0, 2)) {
+        0 -> "Низкий"
+        2 -> "Высокий"
+        else -> "Обычный"
     }
+
+    fun durationLabel(minutes: Int): String = buildList {
+        if (minutes >= 60) add("${minutes / 60} ч")
+        if (minutes % 60 != 0 || minutes < 60) add("${minutes % 60} мин")
+    }.joinToString(" ")
+
+    /** Deadline groups always outrank a manually selected priority. */
+    fun urgency(task: TaskEntity, date: String = today()): Int = when {
+        task.completed -> 0
+        isOverdue(task, date) -> 3
+        isDueSoon(task, date) -> 2
+        else -> 1
+    }
+
+    fun comparator(date: String = today()): Comparator<TaskEntity> =
+        compareByDescending<TaskEntity> { urgency(it, date) }
+            .thenByDescending { it.priorityLevel.coerceIn(0, 2) }
+            .thenBy { it.deadline.ifBlank { "9999-12-31" } }
+            .thenBy { it.id }
 
     fun status(task: TaskEntity): String {
         if (task.completed) {

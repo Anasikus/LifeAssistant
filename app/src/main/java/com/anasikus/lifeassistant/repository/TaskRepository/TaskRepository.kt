@@ -11,15 +11,20 @@ class TaskRepository(
     val allTasks: Flow<List<TaskEntity>> =
         taskDao.getAllTasks()
 
+    suspend fun archiveCompletedBefore(date: String) = taskDao.archiveCompletedBefore(date)
+
+    suspend fun setArchived(task: TaskEntity, archived: Boolean, today: String) =
+        taskDao.archive(task.id, archived, today)
+
     suspend fun addTask(task: TaskEntity) {
         taskDao.insertTask(task)
     }
 
     suspend fun updateTask(task: TaskEntity) {
-        taskDao.updateTask(task)
+        taskDao.editTask(task)
     }
 
     suspend fun deleteTask(task: TaskEntity) {
-        taskDao.deleteTask(task)
+        taskDao.removeTask(task)
     }
 }

@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinanceInboxEntity::class,
         FinanceImportRuleEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -217,6 +217,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tasks ADD COLUMN estimatedDurationMinutes INTEGER NOT NULL DEFAULT 60")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN priorityLevel INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN autoArchiveSuppressed INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("UPDATE tasks SET estimatedDurationMinutes = (SELECT min(1440, max(15, durationMinutes)) FROM calendar_task_placements WHERE taskId = tasks.id) WHERE EXISTS (SELECT 1 FROM calendar_task_placements WHERE taskId = tasks.id)")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -249,7 +259,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_7_8,
                         MIGRATION_8_9,
                         MIGRATION_9_10,
-                        MIGRATION_10_11
+                        MIGRATION_10_11,
+                        MIGRATION_11_12
                         )
                     .build()
                     .also {

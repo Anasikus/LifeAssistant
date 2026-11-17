@@ -131,29 +131,14 @@ object CalendarTaskScheduler {
 
     private const val DAY_START_MINUTE = 7 * 60
     private const val DAY_END_MINUTE = 23 * 60
-    private const val DEFAULT_TASK_DURATION_MINUTES = 60
 
     // Планировщик проверяет каждую минуту, а не только четверть часа.
     private const val SEARCH_STEP_MINUTES = 1
 
 
-    /** Приоритет 5 — максимальный, 1 — минимальный. */
-    fun priority(
-        task: TaskEntity,
-        today: String = CalendarDateUtils.today()
-    ): Int {
-        if (task.deadline.isBlank()) return 1
-        if (task.deadline < today) return 5
-
-        val daysRemaining = CalendarDateUtils.daysBetween(today, task.deadline)
-        return when {
-            daysRemaining <= 0 -> 5
-            daysRemaining <= 1 -> 4
-            daysRemaining <= 3 -> 3
-            daysRemaining <= 7 -> 2
-            else -> 1
-        }
-    }
+    /** Urgency groups dominate manual priority: overdue > due soon > ordinary. */
+    fun priority(task: TaskEntity, today: String = CalendarDateUtils.today()): Int =
+        TaskRules.urgency(task, today) * 10 + task.priorityLevel.coerceIn(0, 2)
 
     /**
      * Размещает незавершённые задачи в свободное время.
@@ -168,11 +153,13 @@ object CalendarTaskScheduler {
         events: List<CalendarEventOccurrence>,
         rangeStart: String,
         rangeEnd: String,
-        placements: List<CalendarTaskPlacementEntity> = emptyList()
+        placements: List<CalendarTaskPlacementEntity> = emptyList(),
+        now: java.util.Calendar = java.util.Calendar.getInstance(),
+        today: String = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(now.time),
+        earliestStartMinute: Int = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE) + 1
     ): List<ScheduledTask> {
         if (rangeStart > rangeEnd) return emptyList()
 
-        val today = CalendarDateUtils.today()
         val effectiveStart = maxOf(rangeStart, today)
         val dates = CalendarDateUtils.datesBetween(effectiveStart, rangeEnd)
         val placementsByTaskId = placements.associateBy { it.taskId }
@@ -189,6 +176,7 @@ object CalendarTaskScheduler {
             val end = start + duration
             if (
                 start < DAY_START_MINUTE ||
+                (date == today && start < earliestStartMinute) ||
                 end > DAY_END_MINUTE ||
                 conflictsWithEvent(date, start, end) ||
                 result.any { it.date == date && start < it.startMinute + it.durationMinutes && end > it.startMinute }
@@ -200,12 +188,8 @@ object CalendarTaskScheduler {
         }
 
         val pendingTasks = tasks
-            .filterNot { it.completed }
-            .sortedWith(
-                compareByDescending<TaskEntity> { priority(it, today) }
-                    .thenBy { it.deadline.ifBlank { "9999-12-31" } }
-                    .thenBy { it.id }
-            )
+            .filterNot { it.completed || it.archived }
+            .sortedWith(TaskRules.comparator(today))
 
         // Сначала резервируем ВСЕ ручные слоты: автоматическая задача более
         // высокого приоритета не должна занять место ещё не обработанной ручной.
@@ -232,7 +216,7 @@ object CalendarTaskScheduler {
 
         automaticTasks.forEach { task ->
             val savedPlacement = placementsByTaskId[task.id]
-            val duration = (savedPlacement?.durationMinutes ?: DEFAULT_TASK_DURATION_MINUTES)
+            val duration = (savedPlacement?.durationMinutes ?: task.estimatedDurationMinutes)
                 .coerceIn(15, 24 * 60)
             val excludedDate = savedPlacement?.takeIf { it.hidden }?.date
 
@@ -241,7 +225,7 @@ object CalendarTaskScheduler {
             for (date in dates) {
                 if (date == excludedDate || (task.startDate.isNotBlank() && date < task.startDate)) continue
 
-                var minute = DAY_START_MINUTE
+                var minute = if (date == today) maxOf(DAY_START_MINUTE, earliestStartMinute) else DAY_START_MINUTE
                 while (minute + duration <= DAY_END_MINUTE) {
                     if (canPlace(date, minute, duration)) {
                         result.add(

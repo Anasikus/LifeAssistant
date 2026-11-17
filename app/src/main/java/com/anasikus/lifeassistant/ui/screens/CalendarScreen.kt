@@ -34,7 +34,13 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.Composable
+import com.anasikus.lifeassistant.domain.TaskRules
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -93,10 +99,20 @@ fun CalendarScreen(
     taskViewModel: TaskViewModel,
     modifier: Modifier = Modifier
 ) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val clockMinute by produceState(System.currentTimeMillis() / 60_000L, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                value = System.currentTimeMillis() / 60_000L
+                kotlinx.coroutines.delay(15_000L)
+            }
+        }
+    }
     val events by viewModel.events.collectAsState()
     val eventOverrides by viewModel.eventOverrides.collectAsState()
     val placements by viewModel.placements.collectAsState()
-    val tasks by taskViewModel.tasks.collectAsState()
+    val tasks by taskViewModel.tasks.collectAsStateWithLifecycle()
+    val taskError by taskViewModel.error.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val shiftPattern by viewModel.shiftPattern.collectAsState()
     val shiftDays by viewModel.shiftDays.collectAsState()
@@ -196,7 +212,7 @@ fun CalendarScreen(
     val displayEvents = remember(occurrences, shiftBlocks, paymentBlocks) {
         (occurrences + shiftBlocks + paymentBlocks).sortedWith(compareBy({ it.date }, { it.startMinute }))
     }
-    val scheduledTasks = remember(tasks, occurrences, shiftBlocks, effectiveShifts, placements, rangeStart, rangeEnd) {
+    val scheduledTasks = remember(tasks, occurrences, shiftBlocks, effectiveShifts, placements, rangeStart, rangeEnd, clockMinute) {
         val tentativeDates = effectiveShifts.filter { it.predicted }.map { it.date }.toSet()
         CalendarTaskScheduler.schedule(
             tasks = tasks,
@@ -402,6 +418,18 @@ fun CalendarScreen(
                 TextButton(onClick = { showShifts = true }) { Text("Смены", color = AppColors.Accent) }
             }
 
+            if (mode == CalendarViewMode.DAY && anchorDate == CalendarDateUtils.today()) {
+                val placedIds = scheduledTasks.map { it.task.id }.toSet()
+                val unplaced = tasks.count { task ->
+                    val saved = placements.find { it.taskId == task.id }
+                    !task.completed && !task.archived && task.id !in placedIds &&
+                        (task.startDate.isBlank() || task.startDate <= anchorDate) &&
+                        (saved == null || (saved.hidden && saved.date != anchorDate))
+                }
+                if (unplaced > 0) Text("Для $unplaced задач нет свободного окна сегодня. Они остаются в разделе «Задачи». Для поиска окна в следующие дни выбери «Неделя».",
+                    color = AppColors.SecondaryText, fontSize = 12.sp)
+            }
+
             when (mode) {
                 CalendarViewMode.DAY -> {
                     ScheduleTimeline(
@@ -477,11 +505,12 @@ fun CalendarScreen(
         TaskEditorDialog(
             task = null,
             initialDate = eventInitialDate,
+            error = taskError,
             creationHeader = { CalendarCreationTabs(true) { createTask = it } },
             onDismiss = { showEventDialog = false },
-            onSave = { title, description, start, deadline ->
-                taskViewModel.addTask(TaskEntity(title = title, description = description, startDate = start, deadline = deadline))
-                showEventDialog = false
+            onSave = { title, description, start, deadline, duration, priority ->
+                taskViewModel.addTask(TaskEntity(title = title, description = description, startDate = start, deadline = deadline,
+                    estimatedDurationMinutes = duration, priorityLevel = priority)) { showEventDialog = false }
             }
         )
     } else if (showEventDialog) {
@@ -1025,7 +1054,7 @@ private fun WeekTasksContent(
                                 )
                                 Column {
                                     Text(scheduled.task.title, color = AppColors.MainText, fontWeight = FontWeight.SemiBold)
-                                    Text("Приоритет ${scheduled.priority}", color = taskPriorityColor(scheduled.priority), fontSize = 11.sp)
+                                    Text("${when (TaskRules.urgency(scheduled.task)) { 3 -> "Просрочена · "; 2 -> "Горит срок · "; else -> "" }}${TaskRules.priorityLabel(scheduled.task.priorityLevel)} приоритет", color = taskPriorityColor(scheduled.priority), fontSize = 11.sp)
                                     if (scheduled.task.deadline.isNotBlank()) {
                                         Text(
                                             text = "Дедлайн: ${CalendarDateUtils.formatDate(scheduled.task.deadline)}",
@@ -1237,10 +1266,9 @@ private fun EventListCard(
 }
 
 private fun taskPriorityColor(priority: Int): Color = when (priority) {
-    5 -> AppColors.Red
-    4 -> AppColors.LatePurple
-    3 -> AppColors.Yellow
-    2 -> AppColors.Accent
+    in 30..39 -> AppColors.Red
+    in 20..29 -> AppColors.Yellow
+    12 -> AppColors.Accent
     else -> AppColors.Green
 }
 
