@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.debounce
 
 class CalendarViewModel(
     private val repository: CalendarRepository
@@ -75,10 +74,10 @@ class CalendarViewModel(
         viewModelScope.launch { repository.planning.deletePaymentPlan(id) }
     }
 
-    @OptIn(kotlinx.coroutines.FlowPreview::class)
     val inboxMessages = repository.inbox.messages()
-        .debounce(150)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun inboxForStatus(status: String) = repository.inbox.messagesWithStatus(status)
+
     val importRules = repository.inbox.rules()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val inboxError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
@@ -100,8 +99,17 @@ class CalendarViewModel(
         }
     }
 
-    fun keepInbox(id: Long, title: String, body: String) {
-        viewModelScope.launch { repository.inbox.keepMessage(id, title, body) }
+    fun keepInbox(id: Long, title: String, body: String, onSaved: () -> Unit = {}) {
+        viewModelScope.launch {
+            inboxError.value = null
+            try {
+                repository.inbox.keepMessage(id, title, body)
+                onSaved()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                inboxError.value = "Не удалось сохранить сообщение. Повтори сохранение."
+            }
+        }
     }
 
     fun ignoreInbox(id: Long, learn: Boolean, onSaved: () -> Unit = {}) {

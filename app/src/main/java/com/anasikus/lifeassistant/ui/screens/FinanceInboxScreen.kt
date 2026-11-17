@@ -14,6 +14,8 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.anasikus.lifeassistant.data.FinanceInboxEntity
 import com.anasikus.lifeassistant.data.FinanceImportRuleEntity
 import com.anasikus.lifeassistant.data.ExpenseCategoryEntity
@@ -46,19 +49,23 @@ import kotlinx.coroutines.launch
 @Composable
 fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource>, onBack: () -> Unit, modifier: Modifier = Modifier) {
     BackHandler(onBack = onBack)
-    val messages by viewModel.inboxMessages.collectAsState()
-    val rules by viewModel.importRules.collectAsState()
-    val categories by viewModel.expenseCategories.collectAsState()
-    val error by viewModel.inboxError.collectAsState()
+    val messages by viewModel.inboxMessages.collectAsStateWithLifecycle()
+    val rules by viewModel.importRules.collectAsStateWithLifecycle()
+    val categories by viewModel.expenseCategories.collectAsStateWithLifecycle()
+    val error by viewModel.inboxError.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<FinanceInboxEntity?>(null) }
     var deleting by remember { mutableStateOf<FinanceInboxEntity?>(null) }
     var ignoring by remember { mutableStateOf<FinanceInboxEntity?>(null) }
     var senderSettings by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var filter by remember { mutableStateOf("PENDING") }
+    var filter by rememberSaveable { mutableStateOf("PENDING") }
+    val listState = rememberLazyListState()
+    LaunchedEffect(filter) { listState.scrollToItem(0) }
     var showAccess by remember { mutableStateOf(false) }
     var showSenders by remember { mutableStateOf(false) }
     val counts = remember(messages) { messages.groupingBy { it.status }.eachCount() }
-    val shown = remember(messages, filter) { messages.filter { it.status == filter } }
+    val shown by key(filter) {
+        remember(filter) { viewModel.inboxForStatus(filter) }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }
     val ruleMap = remember(rules) { rules.associateBy { it.key } }
     fun senderScope(source: String, sender: String): Pair<String, String> =
         FinanceMessageParser.appPackage(source, sender)?.let { "APP" to it } ?: (source to sender)
@@ -67,7 +74,7 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
     var showCategories by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
         LazyColumn(
-            modifier.background(AppColors.Background), contentPadding = PaddingValues(16.dp),
+            modifier.background(AppColors.Background), state = listState, contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
@@ -89,7 +96,14 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
                     }
                 }
             }
-            if (shown.isEmpty()) item { Text("В этом списке пока нет сообщений", color = AppColors.SecondaryText) }
+            if (shown.isEmpty()) item {
+                Text(when (filter) {
+                    "POSTED" -> "Здесь появятся подтверждённые уведомления с операциями."
+                    "SAVED" -> "Здесь появятся сообщения, сохранённые без операции в финансах."
+                    "IGNORED" -> "Здесь останутся отмеченные ненужными сообщения; их похожие копии удаляются."
+                    else -> "Новых сообщений для проверки пока нет."
+                }, color = AppColors.SecondaryText)
+            }
             items(shown, key = { it.id }) { message ->
                 Card(colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -122,22 +136,22 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
         }
         selected?.let { message ->
             ReviewMessageDialog(message, rules.find { it.key == message.ruleKey }, categories, sources, error,
-                onKeep = { title, body -> viewModel.keepInbox(message.id, title, body); selected = null },
+                onKeep = { title, body -> viewModel.keepInbox(message.id, title, body) { selected = null; filter = "SAVED" } },
                 onDismiss = { selected = null }) { title, body, income, amount, date, category, source, learn, textFilter ->
-                viewModel.confirmInbox(message.id, title, body, income, amount, date, category, source?.key, source?.name, learn, textFilter) { selected = null }
+                viewModel.confirmInbox(message.id, title, body, income, amount, date, category, source?.key, source?.name, learn, textFilter) { selected = null; filter = "POSTED" }
             }
         }
         ignoring?.let { message ->
             AlertDialog(
                 onDismissRequest = { ignoring = null }, title = { Text("Считать сообщение ненужным?") },
                 text = { Column {
-                    Text("«Удалить похожие» удалит накопленные неучтённые сообщения этого шаблона от того же отправителя и отключит их дальнейший сбор. Другие учтённые операции сохранятся. Операция выбранного сообщения, если она есть, будет удалена.")
+                    Text("Выбранное сообщение останется в «Не нужно». «Удалить похожие» очистит остальные неучтённые сообщения этого шаблона от того же отправителя и отключит их дальнейший сбор. Другие учтённые операции сохранятся. Операция выбранного сообщения, если она есть, будет удалена.")
                     error?.let { Text(it, color = AppColors.Red) }
                 } },
-                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true) { ignoring = null } }) { Text("Удалить похожие") } },
+                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true) { ignoring = null; filter = "IGNORED" } }) { Text("Удалить похожие") } },
                 dismissButton = {
                     Row {
-                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false) { ignoring = null } }) { Text("Только это") }
+                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false) { ignoring = null; filter = "IGNORED" } }) { Text("Только это") }
                         TextButton(onClick = { ignoring = null }) { Text("Отмена") }
                     }
                 }
@@ -312,6 +326,8 @@ private fun CaptureAccessDialog(onDismiss: () -> Unit) {
                 OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Настройки доступа Android") }
                 Text(if (connected) "Последнее состояние обработчика: подключён" else "Последнее состояние обработчика: отключён")
                 OutlinedButton(enabled = notificationAccess, onClick = { FinanceCaptureSettings.reconnect(context) }) { Text("Переподключить обработчик") }
+                Text("Последний проверенный пуш:")
+                Text(remember(healthRevision) { FinanceCaptureSettings.pushDetails(context) }, color = AppColors.SecondaryText)
                 listOf("SMS" to "SMS", "NOTIFICATION" to "Пуши", "EMAIL" to "Почта").forEach { (key, label) ->
                     val last = FinanceCaptureSettings.lastProcessed(context, key)
                     Text("$label: " + if (last > 0) "последняя обработка " + java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(last)) else "ещё не обрабатывались")

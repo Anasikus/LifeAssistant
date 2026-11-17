@@ -14,6 +14,9 @@ interface FinanceInboxDao {
     @Query("SELECT * FROM finance_inbox WHERE status != 'DELETED' ORDER BY receivedAt DESC, id DESC")
     fun messages(): Flow<List<FinanceInboxEntity>>
 
+    @Query("SELECT * FROM finance_inbox WHERE status = :status ORDER BY receivedAt DESC, id DESC")
+    fun messagesWithStatus(status: String): Flow<List<FinanceInboxEntity>>
+
     @Query("SELECT * FROM finance_import_rules ORDER BY source, sender")
     fun rules(): Flow<List<FinanceImportRuleEntity>>
 
@@ -105,11 +108,11 @@ interface FinanceInboxDao {
 
     /** Обе точки входа используют одну транзакцию и уникальный eventKey. */
     @Transaction
-    suspend fun capture(value: FinanceInboxEntity) {
-        if (byEvent(value.eventKey) != null) return
-        if (isSenderBlocked(value.source, value.sender)) return
+    suspend fun capture(value: FinanceInboxEntity): String {
+        if (byEvent(value.eventKey) != null) return "ALREADY_STORED"
+        if (isSenderBlocked(value.source, value.sender)) return "SENDER_BLOCKED"
         val exact = rule(value.ruleKey)
-        if (exact?.action == "IGNORE" && value.source != "MANUAL") return
+        if (exact?.action == "IGNORE" && value.source != "MANUAL") return "TEMPLATE_IGNORED"
         val parsed = FinanceMessageParser.message(value.title, value.body, value.source)
         // A broad text rule must also agree with the detected direction. Two matches require review.
         val matching = filteredRules(value.source, value.sender).filter {
@@ -125,7 +128,7 @@ interface FinanceInboxDao {
             matching.isEmpty() -> exact
             else -> null
         }
-        if (learned?.action == "IGNORE" && value.source != "MANUAL") return
+        if (learned?.action == "IGNORE" && value.source != "MANUAL") return "TEMPLATE_IGNORED"
         val automaticAmount = if (learned?.textFilter != null) parsed.preferredAmount else
             learned?.amountOrdinal?.let { parsed.amounts.getOrNull(it) }
                 ?.takeIf { !it.balance && it.cents > 0L }?.cents
@@ -144,7 +147,7 @@ interface FinanceInboxDao {
             incomeSourceName = learned?.incomeSourceName,
             possibleDuplicate = possibleDuplicate
         ))
-        if (id <= 0L) return
+        if (id <= 0L) return "ALREADY_STORED"
         val categoryValid = learned?.expenseCategoryId?.let { categoryExists(it) == 1 } ?: true
         if (value.source != "MANUAL" && learned?.action == "AUTO" && learned.income != null && automaticAmount != null &&
             !possibleDuplicate && categoryValid
@@ -154,7 +157,9 @@ interface FinanceInboxDao {
                 FinanceMessageParser.date(value.receivedAt), learned.expenseCategoryId,
                 learned.incomeSourceKey, learned.incomeSourceName, learn = false, automatic = true
             )
+            return "POSTED"
         }
+        return if (learned?.action == "KEEP") "SAVED" else "PENDING"
     }
 
     @Transaction
@@ -249,11 +254,11 @@ interface FinanceInboxDao {
             )
             saveRule(ignoredRule)
             val ids = unpostedFromSender(old.source, old.sender).filter { candidate ->
-                candidate.ruleKey == old.ruleKey ||
+                candidate.id != id && (candidate.ruleKey == old.ruleKey ||
                     FinanceMessageParser.template(candidate.title, candidate.body) == ignoredRule.template ||
                     (ignoredRule.textFilter != null &&
                         (ignoredRule.income == null || ignoredRule.income == FinanceMessageParser.message(candidate.title, candidate.body, candidate.source).income) &&
-                        FinanceMessageParser.matchesFilter(ignoredRule.textFilter, candidate.title, candidate.body))
+                        FinanceMessageParser.matchesFilter(ignoredRule.textFilter, candidate.title, candidate.body)))
             }.map { it.id }
             // Stay below SQLite's bind parameter limit even for thousands of messages.
             ids.chunked(400).forEach { purgeUnposted(it) }

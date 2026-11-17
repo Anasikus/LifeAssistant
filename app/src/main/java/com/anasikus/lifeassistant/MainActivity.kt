@@ -86,6 +86,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    override fun onResume() {
+        super.onResume()
+        com.anasikus.lifeassistant.notifications.FinanceCaptureSettings.reconnect(applicationContext)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

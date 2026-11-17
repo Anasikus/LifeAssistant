@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.anasikus.lifeassistant.data.ExpenseCategoryEntity
 import com.anasikus.lifeassistant.data.FinanceTransactionEntity
 import com.anasikus.lifeassistant.domain.CalendarDateUtils
@@ -35,7 +36,7 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
     val days by viewModel.shiftDays.collectAsState()
     val transactions by viewModel.financeTransactions.collectAsState()
     val categories by viewModel.expenseCategories.collectAsState()
-    val inbox by viewModel.inboxMessages.collectAsState()
+    val inbox by viewModel.inboxMessages.collectAsStateWithLifecycle()
     var showInbox by remember { mutableStateOf(false) }
     var showPlans by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
