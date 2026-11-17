@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.debounce
 
 class CalendarViewModel(
     private val repository: CalendarRepository
@@ -72,7 +75,9 @@ class CalendarViewModel(
         viewModelScope.launch { repository.planning.deletePaymentPlan(id) }
     }
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     val inboxMessages = repository.inbox.messages()
+        .debounce(150)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val importRules = repository.inbox.rules()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -99,8 +104,17 @@ class CalendarViewModel(
         viewModelScope.launch { repository.inbox.keepMessage(id, title, body) }
     }
 
-    fun ignoreInbox(id: Long, learn: Boolean) {
-        viewModelScope.launch { repository.inbox.ignore(id, learn) }
+    fun ignoreInbox(id: Long, learn: Boolean, onSaved: () -> Unit = {}) {
+        viewModelScope.launch {
+            inboxError.value = null
+            try {
+                withContext(Dispatchers.IO) { repository.inbox.ignore(id, learn) }
+                onSaved()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                inboxError.value = "Не удалось удалить ненужные сообщения. Повтори действие."
+            }
+        }
     }
 
     fun deleteInbox(id: Long) {
@@ -110,7 +124,7 @@ class CalendarViewModel(
     fun configureFinanceSender(source: String, sender: String, bank: String, financial: Boolean, onSaved: () -> Unit) {
         viewModelScope.launch {
             try {
-                repository.inbox.configureSender(source, sender, bank, financial)
+                withContext(Dispatchers.IO) { repository.inbox.configureSender(source, sender, bank, financial) }
                 inboxError.value = null
                 onSaved()
             } catch (error: Exception) {

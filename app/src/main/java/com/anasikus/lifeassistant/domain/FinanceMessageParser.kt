@@ -75,6 +75,9 @@ object FinanceMessageParser {
     fun ruleKey(source: String, sender: String, title: String, body: String): String =
         hash(source + "\n" + sender.lowercase(Locale.ROOT) + "\n" + template(title, body))
 
+    fun appPackage(source: String, sender: String): String? =
+        if (source in listOf("APP", "EMAIL", "NOTIFICATION")) sender.substringBefore(" · ").trim().takeIf { it.isNotEmpty() } else null
+
     fun senderKey(source: String, sender: String): String = "sender:" + hash(source + "\n" + sender.trim().lowercase(Locale.ROOT))
 
     fun matchesFilter(filter: String, title: String, body: String): Boolean {

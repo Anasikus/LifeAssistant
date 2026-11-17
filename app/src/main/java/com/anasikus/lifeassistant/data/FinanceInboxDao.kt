@@ -29,6 +29,32 @@ interface FinanceInboxDao {
     @Query("SELECT * FROM finance_import_rules WHERE source = :source AND sender = :sender AND textFilter IS NOT NULL")
     suspend fun filteredRules(source: String, sender: String): List<FinanceImportRuleEntity>
 
+    @Query("SELECT * FROM finance_import_rules WHERE action = 'BLOCK_SENDER'")
+    fun blockedSenders(): Flow<List<FinanceImportRuleEntity>>
+
+    @Query("""
+        DELETE FROM finance_inbox
+        WHERE status IN ('PENDING', 'SAVED', 'IGNORED')
+        AND NOT EXISTS (SELECT 1 FROM finance_transactions WHERE inboxMessageId = finance_inbox.id)
+        AND ((source = :source AND sender = :sender)
+            OR (:source = 'APP' AND source IN ('EMAIL', 'NOTIFICATION')
+                AND (sender = :sender OR substr(sender, 1, length(:sender) + 3) = :sender || ' · ')))
+    """)
+    suspend fun purgeSender(source: String, sender: String): Int
+
+    @Query("SELECT * FROM finance_inbox WHERE source = :source AND sender = :sender AND status IN ('PENDING', 'SAVED', 'IGNORED')")
+    suspend fun unpostedFromSender(source: String, sender: String): List<FinanceInboxEntity>
+
+    @Query("DELETE FROM finance_inbox WHERE id IN (:ids) AND status IN ('PENDING', 'SAVED', 'IGNORED') AND NOT EXISTS (SELECT 1 FROM finance_transactions WHERE inboxMessageId = finance_inbox.id)")
+    suspend fun purgeUnposted(ids: List<Long>): Int
+
+    suspend fun isSenderBlocked(source: String, sender: String): Boolean {
+        if (source == "MANUAL") return false
+        val app = FinanceMessageParser.appPackage(source, sender)
+        if (app != null && rule(FinanceMessageParser.senderKey("APP", app))?.action == "BLOCK_SENDER") return true
+        return rule(FinanceMessageParser.senderKey(source, sender))?.action == "BLOCK_SENDER"
+    }
+
     @Transaction
     suspend fun configureSender(source: String, sender: String, bank: String, financial: Boolean) {
         saveRule(FinanceImportRuleEntity(
@@ -36,6 +62,12 @@ interface FinanceInboxDao {
             template = "Все сообщения отправителя", action = if (financial) "FINANCIAL" else "BLOCK_SENDER",
             bankName = bank.trim().takeIf { it.isNotEmpty() }
         ))
+        if (!financial) purgeSender(source, sender)
+        else if (source == "APP") {
+            rule(FinanceMessageParser.senderKey("NOTIFICATION", sender))?.let {
+                if (it.action == "BLOCK_SENDER") saveRule(it.copy(action = "FINANCIAL"))
+            }
+        }
     }
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -75,17 +107,20 @@ interface FinanceInboxDao {
     @Transaction
     suspend fun capture(value: FinanceInboxEntity) {
         if (byEvent(value.eventKey) != null) return
-        val senderRule = rule(FinanceMessageParser.senderKey(value.source, value.sender))
-        if (senderRule?.action == "BLOCK_SENDER" && value.source != "MANUAL") return
+        if (isSenderBlocked(value.source, value.sender)) return
+        val exact = rule(value.ruleKey)
+        if (exact?.action == "IGNORE" && value.source != "MANUAL") return
         val parsed = FinanceMessageParser.message(value.title, value.body, value.source)
         // A broad text rule must also agree with the detected direction. Two matches require review.
         val matching = filteredRules(value.source, value.sender).filter {
-            it.action in listOf("AUTO", "IGNORE", "KEEP") && it.income == parsed.income && parsed.income != null &&
+            it.action in listOf("AUTO", "IGNORE", "KEEP") &&
+                ((it.action == "IGNORE" && it.income == null) || (it.income == parsed.income && parsed.income != null)) &&
                 FinanceMessageParser.matchesFilter(it.textFilter.orEmpty(), value.title, value.body)
         }
-        val exact = rule(value.ruleKey)
         val learned = when {
-            exact?.action in listOf("IGNORE", "KEEP") -> exact
+            exact?.action == "IGNORE" -> exact
+            matching.any { it.action == "IGNORE" } -> matching.first { it.action == "IGNORE" }
+            exact?.action == "KEEP" -> exact
             matching.size == 1 -> matching.single()
             matching.isEmpty() -> exact
             else -> null
@@ -207,10 +242,22 @@ interface FinanceInboxDao {
         transactionForMessage(id)?.let { removeTransaction(it.id) }
         updateMessage(old.copy(status = "IGNORED", automatic = false))
         val learned = rule(old.ruleKey)
-        if (learn) saveRule(learned?.copy(action = "IGNORE") ?: FinanceImportRuleEntity(
-            key = old.ruleKey, source = old.source, sender = old.sender,
-            template = FinanceMessageParser.template(old.title, old.body), action = "IGNORE"
-        )) else if (learned?.action == "AUTO") saveRule(learned.copy(action = "REVIEW"))
+        if (learn) {
+            val ignoredRule = learned?.copy(action = "IGNORE") ?: FinanceImportRuleEntity(
+                key = old.ruleKey, source = old.source, sender = old.sender,
+                template = FinanceMessageParser.template(old.title, old.body), action = "IGNORE"
+            )
+            saveRule(ignoredRule)
+            val ids = unpostedFromSender(old.source, old.sender).filter { candidate ->
+                candidate.ruleKey == old.ruleKey ||
+                    FinanceMessageParser.template(candidate.title, candidate.body) == ignoredRule.template ||
+                    (ignoredRule.textFilter != null &&
+                        (ignoredRule.income == null || ignoredRule.income == FinanceMessageParser.message(candidate.title, candidate.body, candidate.source).income) &&
+                        FinanceMessageParser.matchesFilter(ignoredRule.textFilter, candidate.title, candidate.body))
+            }.map { it.id }
+            // Stay below SQLite's bind parameter limit even for thousands of messages.
+            ids.chunked(400).forEach { purgeUnposted(it) }
+        } else if (learned?.action == "AUTO") saveRule(learned.copy(action = "REVIEW"))
     }
 
     @Transaction

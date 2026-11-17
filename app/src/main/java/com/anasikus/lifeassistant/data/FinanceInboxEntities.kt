@@ -4,7 +4,11 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "finance_inbox", indices = [Index(value = ["eventKey"], unique = true)])
+@Entity(tableName = "finance_inbox", indices = [
+    Index(value = ["eventKey"], unique = true),
+    Index(value = ["source", "sender", "status"]),
+    Index(value = ["status", "proposedAmountCents", "receivedAt"])
+])
 data class FinanceInboxEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val eventKey: String,

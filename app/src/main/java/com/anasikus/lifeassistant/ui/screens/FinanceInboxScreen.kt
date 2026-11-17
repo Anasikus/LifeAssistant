@@ -56,6 +56,12 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
     var senderSettings by remember { mutableStateOf<Pair<String, String>?>(null) }
     var filter by remember { mutableStateOf("PENDING") }
     var showAccess by remember { mutableStateOf(false) }
+    var showSenders by remember { mutableStateOf(false) }
+    val counts = remember(messages) { messages.groupingBy { it.status }.eachCount() }
+    val shown = remember(messages, filter) { messages.filter { it.status == filter } }
+    val ruleMap = remember(rules) { rules.associateBy { it.key } }
+    fun senderScope(source: String, sender: String): Pair<String, String> =
+        FinanceMessageParser.appPackage(source, sender)?.let { "APP" to it } ?: (source to sender)
     var showRules by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
@@ -69,30 +75,33 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
                 Text("Уведомления", style = MaterialTheme.typography.headlineSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
                     TextButton(onClick = { showAccess = true }) { Text("Источники") }
+                    TextButton(onClick = { showSenders = true }) { Text("Отправители") }
                     TextButton(onClick = { showRules = true }) { Text("Правила") }
                     TextButton(onClick = { showImport = true }) { Text("Вставить текст") }
                 }
                 TextButton(onClick = { showCategories = true }) { Text("Категории расходов") }
+                error?.let { Text(it, color = AppColors.Red) }
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
                     listOf("PENDING" to "В обработке", "POSTED" to "Учтено", "SAVED" to "Сохранено", "IGNORED" to "Не нужно").forEach { (status, label) ->
                         TextButton(onClick = { filter = status }) {
-                            Text("$label (${messages.count { it.status == status }})", color = if (status == filter) AppColors.Accent else AppColors.SecondaryText)
+                            Text("$label (${counts[status] ?: 0})", color = if (status == filter) AppColors.Accent else AppColors.SecondaryText)
                         }
                     }
                 }
             }
-            val shown = messages.filter { it.status == filter }
             if (shown.isEmpty()) item { Text("В этом списке пока нет сообщений", color = AppColors.SecondaryText) }
             items(shown, key = { it.id }) { message ->
                 Card(colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text("${sourceLabel(message.source)} · ${message.sender}", color = AppColors.SecondaryText)
-                        val senderRule = rules.find { it.key == FinanceMessageParser.senderKey(message.source, message.sender) }
+                        val scope = senderScope(message.source, message.sender)
+                        val senderRule = ruleMap[FinanceMessageParser.senderKey(scope.first, scope.second)]
+                            ?: ruleMap[FinanceMessageParser.senderKey(message.source, message.sender)]
                         if (senderRule != null) Text(
                             (senderRule.bankName?.let { "$it · " }.orEmpty()) + if (senderRule.action == "FINANCIAL") "Финансовый отправитель" else "Сбор отключён",
                             color = AppColors.SecondaryText
                         )
-                        TextButton(onClick = { senderSettings = message.source to message.sender }) { Text("Настроить отправителя") }
+                        TextButton(onClick = { senderSettings = senderScope(message.source, message.sender) }) { Text("Настроить отправителя") }
                         Text(message.title.ifBlank { "Сообщение" }, color = AppColors.MainText)
                         Text(message.body, maxLines = 5, color = AppColors.SecondaryText)
                         Text(CalendarDateUtils.formatDate(FinanceMessageParser.date(message.receivedAt)), color = AppColors.SecondaryText)
@@ -121,11 +130,14 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
         ignoring?.let { message ->
             AlertDialog(
                 onDismissRequest = { ignoring = null }, title = { Text("Считать сообщение ненужным?") },
-                text = { Text("«Запомнить» отключит сбор этого шаблона от этого источника. Связанная операция будет удалена.") },
-                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true); ignoring = null }) { Text("Запомнить") } },
+                text = { Column {
+                    Text("«Удалить похожие» удалит накопленные неучтённые сообщения этого шаблона от того же отправителя и отключит их дальнейший сбор. Другие учтённые операции сохранятся. Операция выбранного сообщения, если она есть, будет удалена.")
+                    error?.let { Text(it, color = AppColors.Red) }
+                } },
+                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true) { ignoring = null } }) { Text("Удалить похожие") } },
                 dismissButton = {
                     Row {
-                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false); ignoring = null }) { Text("Только это") }
+                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false) { ignoring = null } }) { Text("Только это") }
                         TextButton(onClick = { ignoring = null }) { Text("Отмена") }
                     }
                 }
@@ -142,12 +154,17 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
             )
         }
         if (showAccess) CaptureAccessDialog { showAccess = false }
+        if (showSenders) FinanceSendersDialog(messages, rules, error,
+            onSettings = { source, sender -> senderSettings = source to sender; showSenders = false },
+            onBlock = { source, sender -> viewModel.configureFinanceSender(source, sender, "", false) {} },
+            onDismiss = { showSenders = false })
         if (showRules) ImportRulesDialog(rules, categories, viewModel::forgetImportRule,
-            onSender = { source, sender -> senderSettings = source to sender; showRules = false },
+            onSender = { source, sender -> senderSettings = senderScope(source, sender); showRules = false },
             onEdit = { rule -> messages.firstOrNull { it.ruleKey == rule.key }?.let { selected = it; showRules = false } }) { showRules = false }
         senderSettings?.let { (source, sender) ->
             SenderSettingsDialog(source, sender,
-                rules.find { it.key == FinanceMessageParser.senderKey(source, sender) }, error,
+                ruleMap[FinanceMessageParser.senderKey(source, sender)]
+                    ?: if (source == "APP") ruleMap[FinanceMessageParser.senderKey("NOTIFICATION", sender)] else null, error,
                 onDismiss = { senderSettings = null }) { bank, financial ->
                 viewModel.configureFinanceSender(source, sender, bank, financial) { senderSettings = null }
             }
@@ -252,6 +269,12 @@ private fun ReviewMessageDialog(
 private fun CaptureAccessDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
+    var healthRevision by remember { mutableStateOf(0) }
+    DisposableEffect(context) {
+        val stopObserving = FinanceCaptureSettings.observe(context) { healthRevision++ }
+        onDispose { stopObserving() }
+    }
+    val connected = remember(healthRevision) { FinanceCaptureSettings.isConnected(context) }
     var notificationAccess by remember { mutableStateOf(FinanceCaptureSettings.hasNotificationAccess(context)) }
     var sms by remember { mutableStateOf(FinanceCaptureSettings.enabled(context, "SMS")) }
     var email by remember { mutableStateOf(FinanceCaptureSettings.enabled(context, "EMAIL")) }
@@ -287,6 +310,13 @@ private fun CaptureAccessDialog(onDismiss: () -> Unit) {
                 Text("Яндекс Пэй, банки и другие приложения. Новые сообщения попадают на проверку; ненужных отправителей можно отключить, а для операций — задать правила.")
                 Text(if (notificationAccess) "Доступ к уведомлениям разрешён" else "Требуется доступ к уведомлениям в Android")
                 OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Настройки доступа Android") }
+                Text(if (connected) "Последнее состояние обработчика: подключён" else "Последнее состояние обработчика: отключён")
+                OutlinedButton(enabled = notificationAccess, onClick = { FinanceCaptureSettings.reconnect(context) }) { Text("Переподключить обработчик") }
+                listOf("SMS" to "SMS", "NOTIFICATION" to "Пуши", "EMAIL" to "Почта").forEach { (key, label) ->
+                    val last = FinanceCaptureSettings.lastProcessed(context, key)
+                    Text("$label: " + if (last > 0) "последняя обработка " + java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(last)) else "ещё не обрабатывались")
+                    FinanceCaptureSettings.lastError(context, key)?.let { Text("$label: ошибка сохранения ($it)", color = AppColors.Red) }
+                }
                 Text("Включи уведомления в почтовом клиенте. Импортируется видимый текст новых сообщений. Правила и разбор выполняются на телефоне.")
             }
         },
@@ -369,6 +399,7 @@ private fun PasteMessageDialog(onDismiss: () -> Unit) {
 }
 
 private fun sourceLabel(source: String): String = when (source) {
+    "APP" -> "Приложение"
     "SMS" -> "SMS"
     "EMAIL" -> "Почта"
     "NOTIFICATION" -> "Уведомление"
@@ -403,7 +434,7 @@ private fun SenderSettingsDialog(
             OutlinedTextField(bank, { bank = it }, label = { Text("Банк или организация") }, singleLine = true)
             CaptureToggle("Финансовый отправитель", financial) { financial = it }
             Text(if (financial) "Новые сообщения будут обрабатываться. Категорию и автоматический учёт задавай отдельно для конкретных операций."
-                else "Новые сообщения этого отправителя собираться не будут. Старые сообщения и операции сохранятся. Включить обратно можно в правилах.")
+                else "Новые сообщения этого отправителя собираться не будут. Уже накопленные неучтённые сообщения удалятся независимо от содержания. Учтённые операции сохранятся. Включить обратно можно в правилах.")
             error?.let { Text(it, color = AppColors.Red) }
         }
     }, confirmButton = { TextButton(onClick = { onSave(bank, financial) }) { Text("Сохранить") } },

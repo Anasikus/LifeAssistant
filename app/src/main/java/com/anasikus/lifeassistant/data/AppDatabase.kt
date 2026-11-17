@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinanceInboxEntity::class,
         FinanceImportRuleEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -187,6 +187,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_finance_inbox_source_sender_status ON finance_inbox(source, sender, status)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_finance_inbox_status_proposedAmountCents_receivedAt ON finance_inbox(status, proposedAmountCents, receivedAt)")
+                // Apply existing exclusions to the old backlog as well; never touch posted entries.
+                database.execSQL("""
+                    DELETE FROM finance_inbox
+                    WHERE status IN ('PENDING', 'SAVED', 'IGNORED')
+                    AND NOT EXISTS (SELECT 1 FROM finance_transactions WHERE inboxMessageId = finance_inbox.id)
+                    AND EXISTS (
+                        SELECT 1 FROM finance_import_rules r
+                        WHERE (r.action = 'IGNORE' AND r.source = finance_inbox.source AND r.sender = finance_inbox.sender AND r.key = finance_inbox.ruleKey)
+                        OR (r.action = 'BLOCK_SENDER' AND (
+                            (r.source = finance_inbox.source AND r.sender = finance_inbox.sender)
+                            OR (r.source = 'APP' AND finance_inbox.source IN ('EMAIL', 'NOTIFICATION') AND
+                                (finance_inbox.sender = r.sender OR substr(finance_inbox.sender, 1, length(r.sender) + 3) = r.sender || ' · '))
+                        ))
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -217,7 +239,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
-                        MIGRATION_8_9
+                        MIGRATION_8_9,
+                        MIGRATION_9_10
                         )
                     .build()
                     .also {
