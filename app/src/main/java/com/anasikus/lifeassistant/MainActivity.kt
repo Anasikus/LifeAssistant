@@ -129,6 +129,8 @@ fun AssistantScreen(
         mutableStateOf(AppDestination.CALENDAR)
     }
 
+    var financeHomeRequest by remember { mutableStateOf(0) }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = AppColors.Background,
@@ -136,6 +138,7 @@ fun AssistantScreen(
             BottomNavigationBar(
                 selectedDestination = selectedDestination,
                 onDestinationSelected = { destination ->
+                    if (destination == AppDestination.FINANCE) financeHomeRequest++
                     selectedDestination = destination
                 }
             )
@@ -162,7 +165,7 @@ fun AssistantScreen(
                 )
             }
 
-            AppDestination.FINANCE -> FinanceScreen(calendarViewModel, screenModifier)
+            AppDestination.FINANCE -> FinanceScreen(calendarViewModel, screenModifier, financeHomeRequest)
 
             AppDestination.LECTURES -> {
                 FeaturePlaceholderScreen(

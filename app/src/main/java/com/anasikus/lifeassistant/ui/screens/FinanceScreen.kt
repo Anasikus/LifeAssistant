@@ -29,7 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
+fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier, homeRequest: Int = 0) {
     val events by viewModel.events.collectAsState()
     val overrides by viewModel.eventOverrides.collectAsState()
     val pattern by viewModel.shiftPattern.collectAsState()
@@ -70,6 +70,15 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
     var newTransfer by remember { mutableStateOf(false) }
     var newIncome by remember { mutableStateOf<Boolean?>(null) }
     var deleting by remember { mutableStateOf<FinanceTransactionEntity?>(null) }
+
+    LaunchedEffect(homeRequest) {
+        showInbox = false
+        showPlans = false
+        showCategories = false
+        showStatistics = false
+        newIncome = null
+        deleting = null
+    }
 
     if (showInbox) {
         FinanceInboxScreen(viewModel, sources, onBack = { showInbox = false }, modifier = modifier)
@@ -162,7 +171,7 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier) {
         }
         if (showPlans) PaymentPlansDialog(viewModel, if (monthEnd < today) month else today) { showPlans = false }
         if (showCategories) ExpenseCategoriesDialog(viewModel) { showCategories = false }
-        if (showStatistics) FinanceStatisticsDialog(transactions, categories, month, cutoff) { showStatistics = false }
+        if (showStatistics) FinanceStatisticsDialog(transactions, categories, month, cutoff, events, overrides, pattern, days, minute) { showStatistics = false }
         newIncome?.let { income ->
             TransactionDialog(income, sources, categories, today, if (monthEnd < today) month else today, newTransfer, onDismiss = { newIncome = null }) {
                 viewModel.addFinanceTransaction(it)
