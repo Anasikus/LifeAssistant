@@ -28,7 +28,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 Text(AppText.get("Язык"), style = MaterialTheme.typography.titleMedium)
                 ChoiceField(AppText.get("Язык приложения"), if (AppPreferences.language == "ru") AppText.get("Русский") else "English",
                     listOf("ru" to AppText.get("Русский"), "en" to "English")) { language ->
-                    if (language != AppPreferences.language) { AppPreferences.setLanguage(language); generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()?.recreate() }
+                    if (language != AppPreferences.language) { AppPreferences.updateLanguage(language); generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()?.recreate() }
                 }
                 Text(AppText.get("Язык меняется только у интерфейса. Названия задач, категорий, заметки и сообщения остаются как ты их ввела."), color = AppColors.SecondaryText)
             }
@@ -37,11 +37,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(AppText.get("Оформление"), style = MaterialTheme.typography.titleMedium)
                 ChoiceField(AppText.get("Тема"), if (AppPreferences.dark) AppText.get("Тёмная") else AppText.get("Светлая"), listOf("DARK" to AppText.get("Тёмная"), "LIGHT" to AppText.get("Светлая"))) { value ->
-                    AppPreferences.setDark(value == "DARK")
+                    AppPreferences.updateDarkTheme(value == "DARK")
                     generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }.filterIsInstance<Activity>().firstOrNull()?.recreate()
                 }
                 val accents = listOf("PURPLE" to AppText.get("Фиолетовый"), "BLUE" to AppText.get("Синий"), "GREEN" to AppText.get("Зелёный"), "ROSE" to AppText.get("Розовый"), "ORANGE" to AppText.get("Оранжевый"))
-                ChoiceField(AppText.get("Основной цвет"), accents.first { it.first == AppPreferences.accent }.second, accents) { AppPreferences.setAccent(it) }
+                ChoiceField(AppText.get("Основной цвет"), accents.first { it.first == AppPreferences.accent }.second, accents) { AppPreferences.updateAccent(it) }
                 Text(AppText.get("Порядок разделов"), style = MaterialTheme.typography.titleSmall)
                 AppPreferences.order.forEachIndexed { index, name ->
                     val destination = AppDestination.valueOf(name)

@@ -22,9 +22,9 @@ object AppPreferences {
         Locale.setDefault(Locale.forLanguageTag(language))
         AppText.initialize(app)
     }
-    fun setDark(value: Boolean) { dark = value; app.getSharedPreferences("appearance", 0).edit().putBoolean("dark", value).apply() }
-    fun setAccent(value: String) { accent = value; app.getSharedPreferences("appearance", 0).edit().putString("accent", value).apply() }
-    fun setLanguage(value: String) { language = value; Locale.setDefault(Locale.forLanguageTag(value)); app.getSharedPreferences("appearance", 0).edit().putString("language", value).apply() }
+    fun updateDarkTheme(value: Boolean) { dark = value; app.getSharedPreferences("appearance", 0).edit().putBoolean("dark", value).apply() }
+    fun updateAccent(value: String) { accent = value; app.getSharedPreferences("appearance", 0).edit().putString("accent", value).apply() }
+    fun updateLanguage(value: String) { language = value; Locale.setDefault(Locale.forLanguageTag(value)); app.getSharedPreferences("appearance", 0).edit().putString("language", value).apply() }
     fun move(name: String, direction: Int) {
         order = SectionOrder.move(order, name, direction)
         app.getSharedPreferences("appearance", 0).edit().putString("order", order.joinToString(",")).apply()
