@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.domain
 
+import com.anasikus.lifeassistant.settings.AppText
 import com.anasikus.lifeassistant.data.PaymentPlanEntity
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -17,11 +18,11 @@ object PaymentPlanRules {
     fun label(plan: PaymentPlanEntity): String {
         val count = interval(plan)
         return when {
-            plan.repeatUnit == "WEEK" && count == 1 -> "Каждую неделю"
-            plan.repeatUnit == "MONTH" && count == 1 -> "Каждый месяц"
-            plan.repeatUnit == "MONTH" && count == 3 -> "Каждые 3 месяца"
-            plan.repeatUnit == "YEAR" && count == 1 -> "Каждый год"
-            else -> "Повтор: $count ${when (plan.repeatUnit) { "DAY" -> "дн."; "WEEK" -> "нед."; "YEAR" -> "г."; else -> "мес." }}"
+            plan.repeatUnit == "WEEK" && count == 1 -> AppText.get("Каждую неделю")
+            plan.repeatUnit == "MONTH" && count == 1 -> AppText.get("Каждый месяц")
+            plan.repeatUnit == "MONTH" && count == 3 -> AppText.get("Каждые 3 месяца")
+            plan.repeatUnit == "YEAR" && count == 1 -> AppText.get("Каждый год")
+            else -> AppText.get("Повтор: {arg0} {arg1}", count, when (plan.repeatUnit) { "DAY" -> AppText.get("дн."); "WEEK" -> AppText.get("нед."); "YEAR" -> AppText.get("г."); else -> AppText.get("мес.") })
         }
     }
 

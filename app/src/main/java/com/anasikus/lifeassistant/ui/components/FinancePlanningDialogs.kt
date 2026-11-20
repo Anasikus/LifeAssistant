@@ -1,5 +1,7 @@
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
+import com.anasikus.lifeassistant.ui.assistantColorScheme
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -46,21 +48,21 @@ fun ChoiceField(label: String, value: String, choices: List<Pair<String, String>
 
 @Composable
 fun ExpenseCategoryPicker(categories: List<ExpenseCategoryEntity>, selectedId: Int?, onSelect: (Int?) -> Unit) {
-    ChoiceField("Категория расхода", categories.find { it.id == selectedId }?.name ?: "Без категории",
-        listOf("" to "Без категории") + categories.map { it.id.toString() to it.name }) { onSelect(it.toIntOrNull()) }
+    ChoiceField(AppText.get("Категория расхода"), categories.find { it.id == selectedId }?.name ?: AppText.get("Без категории"),
+        listOf("" to AppText.get("Без категории")) + categories.map { it.id.toString() to it.name }) { onSelect(it.toIntOrNull()) }
 }
 
 @Composable
 fun IncomeCategoryPicker(categories: List<IncomeCategoryEntity>, selectedId: Int?, onSelect: (Int?) -> Unit) {
-    ChoiceField("Категория дохода", categories.find { it.id == selectedId }?.name ?: "Без категории",
-        listOf("" to "Без категории") + categories.map { it.id.toString() to it.name }) { onSelect(it.toIntOrNull()) }
+    ChoiceField(AppText.get("Категория дохода"), categories.find { it.id == selectedId }?.name ?: AppText.get("Без категории"),
+        listOf("" to AppText.get("Без категории")) + categories.map { it.id.toString() to it.name }) { onSelect(it.toIntOrNull()) }
 }
 
 @Composable
 fun ExpenseCategoriesDialog(viewModel: CalendarViewModel, onDismiss: () -> Unit) {
     val categories by viewModel.expenseCategories.collectAsState()
     val error by viewModel.financeError.collectAsState()
-    CategoryManager("Категории расходов", categories.map { it.id to it.name }, error,
+    CategoryManager(AppText.get("Категории расходов"), categories.map { it.id to it.name }, error,
         onSave = { id, name, saved -> viewModel.saveExpenseCategory(ExpenseCategoryEntity(id, name), saved) },
         onDelete = viewModel::deleteExpenseCategory, onDismiss = onDismiss)
 }
@@ -69,14 +71,14 @@ fun ExpenseCategoriesDialog(viewModel: CalendarViewModel, onDismiss: () -> Unit)
 fun IncomeCategoriesDialog(viewModel: CalendarViewModel, onDismiss: () -> Unit) {
     val categories by viewModel.incomeCategories.collectAsState()
     val error by viewModel.financeError.collectAsState()
-    CategoryManager("Категории доходов", categories.map { it.id to it.name }, error,
+    CategoryManager(AppText.get("Категории доходов"), categories.map { it.id to it.name }, error,
         onSave = { id, name, saved -> viewModel.saveIncomeCategory(IncomeCategoryEntity(id, name), saved) },
         onDelete = viewModel::deleteIncomeCategory, onDismiss = onDismiss)
 }
 
 @Composable
-private fun CategoryManager(title: String, categories: List<Pair<Int, String>>, error: String?,
-    onSave: (Int, String, () -> Unit) -> Unit, onDelete: (Int) -> Unit, onDismiss: () -> Unit) {
+internal fun CategoryManager(title: String, categories: List<Pair<Int, String>>, error: String?,
+    onSave: (Int, String, () -> Unit) -> Unit, onDelete: (Int) -> Unit, onDismiss: () -> Unit, deleteMessage: String = AppText.get("Операции сохранятся без категории.")) {
     var editing by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var deleting by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var name by remember { mutableStateOf("") }
@@ -95,10 +97,10 @@ private fun CategoryManager(title: String, categories: List<Pair<Int, String>>, 
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it; validation = false }, Modifier.weight(1f),
-                    label = { Text("Название") }, singleLine = true, isError = validation)
-                Button(onClick = { save {} }, enabled = valid) { Text(if (editing == null) "Добавить" else "Сохранить") }
+                    label = { Text(AppText.get("Название")) }, singleLine = true, isError = validation)
+                Button(onClick = { save {} }, enabled = valid) { Text(if (editing == null) AppText.get("Добавить") else AppText.get("Сохранить")) }
             }
-            if (validation) Text("Введи уникальное непустое название.", color = AppColors.Red)
+            if (validation) Text(AppText.get("Введи уникальное непустое название."), color = AppColors.Red)
             error?.let { Text(it, color = AppColors.Red) }
             categories.forEach { category ->
                 Card(Modifier.fillMaxWidth()) {
@@ -108,23 +110,23 @@ private fun CategoryManager(title: String, categories: List<Pair<Int, String>>, 
                             TextButton(onClick = {
                                 nextAction = { editing = category; name = category.second; validation = false }
                                 dismiss()
-                            }) { Text("Изменить") }
-                            TextButton(onClick = { deleting = category }) { Text("Удалить") }
+                            }) { Text(AppText.get("Изменить")) }
+                            TextButton(onClick = { deleting = category }) { Text(AppText.get("Удалить")) }
                         }
                     }
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = { nextAction = null; dismiss() }) { Text("Закрыть") } })
+    }, confirmButton = { TextButton(onClick = { nextAction = null; dismiss() }) { Text(AppText.get("Закрыть")) } })
     deleting?.let { category ->
-        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Удалить «${category.second}»?") },
-            text = { Text("Операции сохранятся без категории.") }, confirmButton = {
+        AlertDialog(onDismissRequest = { deleting = null }, title = { Text(AppText.get("Удалить «{arg0}»?", category.second)) },
+            text = { Text(deleteMessage) }, confirmButton = {
                 TextButton(onClick = {
                     onDelete(category.first)
                     if (editing?.first == category.first) { editing = null; name = "" }
                     deleting = null
-                }) { Text("Удалить") }
-            }, dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } })
+                }) { Text(AppText.get("Удалить")) }
+            }, dismissButton = { TextButton(onClick = { deleting = null }) { Text(AppText.get("Отмена")) } })
     }
 }
 
@@ -148,10 +150,10 @@ fun PaymentPlansDialog(viewModel: CalendarViewModel, selectedDate: String, onDis
         canNotify = granted
         if (granted) scope.launch { PaymentReminders.refresh(context.applicationContext) }
     }
-    MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card, onSurface = AppColors.MainText)) {
-        AlertDialog(onDismissRequest = onDismiss, title = { Text("Регулярные платежи") }, text = {
+    MaterialTheme(colorScheme = assistantColorScheme(primary = AppColors.Accent, surface = AppColors.Card, onSurface = AppColors.MainText)) {
+        AlertDialog(onDismissRequest = onDismiss, title = { Text(AppText.get("Регулярные платежи")) }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (!canNotify) TextButton(onClick = { permission.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("Разрешить уведомления") }
+                if (!canNotify) TextButton(onClick = { permission.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text(AppText.get("Разрешить уведомления")) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { month = CalendarDateUtils.addMonths(month, -1) }) { Text("‹") }
                     Text(CalendarDateUtils.formatMonth(month), Modifier.weight(1f), textAlign = TextAlign.Center)
@@ -159,33 +161,33 @@ fun PaymentPlansDialog(viewModel: CalendarViewModel, selectedDate: String, onDis
                 }
                 error?.let { Text(it, color = AppColors.Red) }
                 val occurrences = plans.flatMap { PaymentPlanRules.between(it, month, CalendarDateUtils.endOfMonth(month)) }.sortedBy { it.date }
-                if (occurrences.isEmpty()) Text("На этот месяц платежей нет.")
+                if (occurrences.isEmpty()) Text(AppText.get("На этот месяц платежей нет."))
                 occurrences.forEach { payment ->
                     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = AppColors.Background)) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(payment.plan.title, style = MaterialTheme.typography.titleSmall)
                             Text("${CalendarDateUtils.formatDate(payment.date)} · ${ShiftRules.money(payment.plan.amountCents)}")
                             categories.find { it.id == payment.plan.categoryId }?.let { Text(it.name, color = AppColors.SecondaryText) }
-                            if (payment.key in paid) Text("Оплачено", color = AppColors.Green)
+                            if (payment.key in paid) Text(AppText.get("Оплачено"), color = AppColors.Green)
                             else TextButton(onClick = {
                                 viewModel.addFinanceTransaction(FinanceTransactionEntity(date = today, income = false,
                                     amountCents = payment.plan.amountCents, note = payment.plan.title,
                                     expenseCategoryId = payment.plan.categoryId, planKey = payment.key))
-                            }) { Text("Оплачено сегодня") }
+                            }) { Text(AppText.get("Оплачено сегодня")) }
                         }
                     }
                 }
-                if (plans.isNotEmpty()) Text("Настройки платежей", style = MaterialTheme.typography.titleSmall)
+                if (plans.isNotEmpty()) Text(AppText.get("Настройки платежей"), style = MaterialTheme.typography.titleSmall)
                 plans.forEach { plan ->
                     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = AppColors.Background)) {
                         Column(Modifier.padding(12.dp)) {
                             Text(plan.title, style = MaterialTheme.typography.titleSmall)
                             Text(PaymentPlanRules.label(plan), color = AppColors.SecondaryText)
-                            Text("Напоминание за ${plan.reminderDays} дн. в %02d:%02d".format(plan.reminderMinute / 60, plan.reminderMinute % 60), color = AppColors.SecondaryText)
-                            if (plan.reminderRepeatDays > 0) Text("Повтор каждые ${plan.reminderRepeatDays} дн. до платежа", color = AppColors.SecondaryText)
+                            Text(AppText.get("Напоминание за {arg0} дн. в %02d:%02d", plan.reminderDays).format(plan.reminderMinute / 60, plan.reminderMinute % 60), color = AppColors.SecondaryText)
+                            if (plan.reminderRepeatDays > 0) Text(AppText.get("Повтор каждые {arg0} дн. до платежа", plan.reminderRepeatDays), color = AppColors.SecondaryText)
                             Row {
-                                TextButton(onClick = { editing = plan; editorOpen = true }) { Text("Изменить") }
-                                TextButton(onClick = { deleting = plan }) { Text("Удалить") }
+                                TextButton(onClick = { editing = plan; editorOpen = true }) { Text(AppText.get("Изменить")) }
+                                TextButton(onClick = { deleting = plan }) { Text(AppText.get("Удалить")) }
                             }
                         }
                     }
@@ -194,26 +196,26 @@ fun PaymentPlansDialog(viewModel: CalendarViewModel, selectedDate: String, onDis
         }, confirmButton = {
             Column(Modifier.fillMaxWidth()) {
                 Button(onClick = { editing = null; editorOpen = true }, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.Accent)) { Text("＋ Добавить платёж") }
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Закрыть", color = AppColors.SecondaryText) }
+                    colors = ButtonDefaults.buttonColors(containerColor = AppColors.Accent)) { Text(AppText.get("＋ Добавить платёж")) }
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(AppText.get("Закрыть"), color = AppColors.SecondaryText) }
             }
         })
         if (editorOpen) PaymentPlanEditor(editing, selectedDate, categories, error, onDismiss = { editorOpen = false }) {
             viewModel.savePaymentPlan(it) { editorOpen = false }
         }
         deleting?.let { plan ->
-            AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Удалить «${plan.title}»?") },
-                text = { Text("Оплаченные расходы останутся в истории.") }, confirmButton = {
-                    TextButton(onClick = { viewModel.deletePaymentPlan(plan.id); deleting = null }) { Text("Удалить") }
-                }, dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } })
+            AlertDialog(onDismissRequest = { deleting = null }, title = { Text(AppText.get("Удалить «{arg0}»?", plan.title)) },
+                text = { Text(AppText.get("Оплаченные расходы останутся в истории.")) }, confirmButton = {
+                    TextButton(onClick = { viewModel.deletePaymentPlan(plan.id); deleting = null }) { Text(AppText.get("Удалить")) }
+                }, dismissButton = { TextButton(onClick = { deleting = null }) { Text(AppText.get("Отмена")) } })
         }
     }
 }
 
-private val repeatPresets = listOf("WEEK:1" to "Каждую неделю", "MONTH:1" to "Каждый месяц",
-    "MONTH:3" to "Каждые 3 месяца", "YEAR:1" to "Каждый год", "CUSTOM" to "Другое")
-private val repeatUnits = listOf("DAY" to "День", "WEEK" to "Неделя", "MONTH" to "Месяц", "YEAR" to "Год")
-private val reminderPresets = listOf("1" to "За день", "3" to "За 3 дня", "7" to "За неделю", "14" to "За 2 недели", "CUSTOM" to "Другое")
+private val repeatPresets get() = listOf("WEEK:1" to AppText.get("Каждую неделю"), "MONTH:1" to AppText.get("Каждый месяц"),
+    "MONTH:3" to AppText.get("Каждые 3 месяца"), "YEAR:1" to AppText.get("Каждый год"), "CUSTOM" to AppText.get("Другое"))
+private val repeatUnits get() = listOf("DAY" to AppText.get("День"), "WEEK" to AppText.get("Неделя"), "MONTH" to AppText.get("Месяц"), "YEAR" to AppText.get("Год"))
+private val reminderPresets get() = listOf("1" to AppText.get("За день"), "3" to AppText.get("За 3 дня"), "7" to AppText.get("За неделю"), "14" to AppText.get("За 2 недели"), "CUSTOM" to AppText.get("Другое"))
 
 @Composable
 internal fun PaymentPlanEditor(plan: PaymentPlanEntity?, initialDate: String, categories: List<ExpenseCategoryEntity>,
@@ -249,36 +251,36 @@ internal fun PaymentPlanEditor(plan: PaymentPlanEntity?, initialDate: String, ca
             effectiveUnit, every, minute, repeat))
     }
     val dismiss = rememberDismissGuard(snapshot != initial, ::save, onDismiss)
-    AlertDialog(onDismissRequest = dismiss, title = { Text(if (plan == null) "Новый регулярный платёж" else "Изменить платёж") }, text = {
+    AlertDialog(onDismissRequest = dismiss, title = { Text(if (plan == null) AppText.get("Новый регулярный платёж") else AppText.get("Изменить платёж")) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("Название") }, singleLine = true)
-            OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Сумма, ₽") }, singleLine = true,
+            OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text(AppText.get("Название")) }, singleLine = true)
+            OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text(AppText.get("Сумма, ₽")) }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-            OutlinedDateField("Дата первого платежа", date) { date = it }
-            ChoiceField("Повторять", repeatPresets.first { it.first == preset }.second, repeatPresets) { preset = it }
+            OutlinedDateField(AppText.get("Дата первого платежа"), date) { date = it }
+            ChoiceField(AppText.get("Повторять"), repeatPresets.first { it.first == preset }.second, repeatPresets) { preset = it }
             if (preset == "CUSTOM") Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(count, { count = it.filter(Char::isDigit).take(3) }, Modifier.weight(1f), label = { Text("Каждые") },
+                OutlinedTextField(count, { count = it.filter(Char::isDigit).take(3) }, Modifier.weight(1f), label = { Text(AppText.get("Каждые")) },
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                Box(Modifier.weight(1f)) { ChoiceField("Период", repeatUnits.first { it.first == unit }.second, repeatUnits) { unit = it } }
+                Box(Modifier.weight(1f)) { ChoiceField(AppText.get("Период"), repeatUnits.first { it.first == unit }.second, repeatUnits) { unit = it } }
             }
-            ChoiceField("Напомнить", reminderPresets.first { it.first == reminder }.second, reminderPresets) { reminder = it }
+            ChoiceField(AppText.get("Напомнить"), reminderPresets.first { it.first == reminder }.second, reminderPresets) { reminder = it }
             if (reminder == "CUSTOM") OutlinedTextField(customReminder, { customReminder = it.filter(Char::isDigit).take(3) },
-                Modifier.fillMaxWidth(), label = { Text("За сколько дней (0 — в день платежа)") }, singleLine = true,
+                Modifier.fillMaxWidth(), label = { Text(AppText.get("За сколько дней (0 — в день платежа)")) }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            OutlinedTimeField("Время напоминания", minute) { minute = it }
+            OutlinedTimeField(AppText.get("Время напоминания"), minute) { minute = it }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(repeating, onCheckedChange = { repeating = it }); Text("Повторять напоминание")
+                Switch(repeating, onCheckedChange = { repeating = it }); Text(AppText.get("Повторять напоминание"))
             }
             if (repeating) {
                 OutlinedTextField(repeatDays, { repeatDays = it.filter(Char::isDigit).take(3) }, Modifier.fillMaxWidth(),
-                    label = { Text("Повтор каждые N дней") }, singleLine = true,
+                    label = { Text(AppText.get("Повтор каждые N дней")) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                Text("В выбранное время, до даты платежа включительно. После оплаты напоминания прекращаются.", color = AppColors.SecondaryText)
+                Text(AppText.get("В выбранное время, до даты платежа включительно. После оплаты напоминания прекращаются."), color = AppColors.SecondaryText)
             }
             ExpenseCategoryPicker(categories, categoryId) { categoryId = it }
-            if (validation) Text("Проверь название, сумму и интервалы: повтор 1–365, напоминание 0–365 дней.", color = AppColors.Red)
+            if (validation) Text(AppText.get("Проверь название, сумму и интервалы: повтор 1–365, напоминание 0–365 дней."), color = AppColors.Red)
             error?.let { Text(it, color = AppColors.Red) }
         }
-    }, confirmButton = { Button(onClick = ::save) { Text("Сохранить") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } })
+    }, confirmButton = { Button(onClick = ::save) { Text(AppText.get("Сохранить")) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(AppText.get("Отмена")) } })
 }

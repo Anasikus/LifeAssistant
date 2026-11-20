@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
 import android.app.DatePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,7 +45,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-private val calendarWeekDays = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+private val calendarWeekDays get() = listOf(AppText.get("Пн"), AppText.get("Вт"), AppText.get("Ср"), AppText.get("Чт"), AppText.get("Пт"), AppText.get("Сб"), AppText.get("Вс"))
 
 @Composable
 fun CalendarEventDialog(
@@ -120,11 +121,11 @@ fun CalendarEventDialog(
                     if (title.isBlank()) {
                         titleError = true
                     } else if (durationMinutes !in 15..1440) {
-                        timeError = "Выбери длительность от 15 минут до 24 часов."
+                        timeError = AppText.get("Выбери длительность от 15 минут до 24 часов.")
                     } else if (requireCategory && selectedCategory == null) {
-                        timeError = "Выбери категорию работы или подработки."
+                        timeError = AppText.get("Выбери категорию работы или подработки.")
                     } else if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB") && ShiftRules.cents(amount) == null) {
-                        timeError = "Введи неотрицательную сумму с точностью до копеек."
+                        timeError = AppText.get("Введи неотрицательную сумму с точностью до копеек.")
                     } else {
                         onSave(
                             title.trim(),
@@ -152,7 +153,7 @@ fun CalendarEventDialog(
         textContentColor = AppColors.SecondaryText,
         title = {
             if (creationHeader != null) CompositionLocalProvider(LocalFormSwitch provides switchForm) { creationHeader() } else Text(
-                text = if (event == null) "Новое мероприятие" else "Редактирование мероприятия",
+                text = if (event == null) AppText.get("Новое мероприятие") else AppText.get("Редактирование мероприятия"),
                 fontWeight = FontWeight.Bold
             )
         },
@@ -168,30 +169,30 @@ fun CalendarEventDialog(
                         titleError = false
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Название") },
+                    label = { Text(AppText.get("Название")) },
                     singleLine = true,
                     isError = titleError,
                     colors = fieldColors
                 )
                 error?.let { Text(it, color = AppColors.Red) }
                 if (titleError) {
-                    Text("Введите название мероприятия.", color = AppColors.Red, fontSize = 12.sp)
+                    Text(AppText.get("Введите название мероприятия."), color = AppColors.Red, fontSize = 12.sp)
                 }
 
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Описание") },
+                    label = { Text(AppText.get("Описание")) },
                     minLines = 2,
                     maxLines = 4,
                     colors = fieldColors
                 )
 
                 Box {
-                    OutlinedButton(onClick = { categoryMenu = true }) { Text("Категория: ${selectedCategory?.name ?: "Без категории"}", color = AppColors.MainText) }
+                    OutlinedButton(onClick = { categoryMenu = true }) { Text(AppText.get("Категория: {arg0}", selectedCategory?.name ?: AppText.get("Без категории")), color = AppColors.MainText) }
                     DropdownMenu(expanded = categoryMenu, onDismissRequest = { categoryMenu = false }) {
-                        if (!requireCategory) DropdownMenuItem(text = { Text("Без категории") }, onClick = { categoryId = null; categoryMenu = false })
+                        if (!requireCategory) DropdownMenuItem(text = { Text(AppText.get("Без категории")) }, onClick = { categoryId = null; categoryMenu = false })
                         categories.forEach { category ->
                             DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; categoryMenu = false })
                         }
@@ -209,13 +210,13 @@ fun CalendarEventDialog(
                         }
                     }
                     if (payMode == WorkPay.ADVANCE) {
-                        Text("Плановая сумма аванса. Получение отметь в «Финансы → Доход».", color = AppColors.SecondaryText)
+                        Text(AppText.get("Плановая сумма аванса. Получение отметь в «Финансы → Доход»."), color = AppColors.SecondaryText)
                     }
                     if (payMode == WorkPay.SALARY) {
-                        Text("Укажи зарплату за месяц. Она начисляется по доле завершённых смен месяца.", color = AppColors.SecondaryText)
+                        Text(AppText.get("Укажи зарплату за месяц. Она начисляется по доле завершённых смен месяца."), color = AppColors.SecondaryText)
                     }
                     if (!editSeries && (event?.repeatDaysMask ?: 0) != 0) {
-                        Text("Изменение оплаты здесь относится к выбранной смене.", color = AppColors.SecondaryText)
+                        Text(AppText.get("Изменение оплаты здесь относится к выбранной смене."), color = AppColors.SecondaryText)
                     }
                 }
                 if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) {
@@ -223,7 +224,7 @@ fun CalendarEventDialog(
                         value = amount,
                         onValueChange = { amount = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text(if (selectedCategory?.kind == "WORK") "${payMode.label}, ₽" else "Разовая выплата, ₽") },
+                        label = { Text(if (selectedCategory?.kind == "WORK") "${payMode.label}, ₽" else AppText.get("Разовая выплата, ₽")) },
                         colors = fieldColors,
                         singleLine = true
                     )
@@ -240,14 +241,14 @@ fun CalendarEventDialog(
                         WorkPay.SHIFT -> cents
                         WorkPay.ADVANCE, WorkPay.SALARY -> null
                     }
-                    shiftTotal?.let { Text("За эту смену · ${ShiftRules.money(it)}", color = AppColors.MainText) }
+                    shiftTotal?.let { Text(AppText.get("За эту смену · {arg0}", ShiftRules.money(it)), color = AppColors.MainText) }
                 }
 
                 if (selectedCategory?.kind == "HOLIDAY") {
-                    Text("Ежегодные дни рождения и годовщины добавляй в «Категории и праздники → Праздники». Здесь создаётся мероприятие со временем.", color = AppColors.SecondaryText, fontSize = 11.sp)
+                    Text(AppText.get("Ежегодные дни рождения и годовщины добавляй в «Категории и праздники → Праздники». Здесь создаётся мероприятие со временем."), color = AppColors.SecondaryText, fontSize = 11.sp)
                 }
                 if (selectedCategory?.kind == "SIDE_JOB" && repeatDaysMask != 0) {
-                    Text("Выплата планируется за каждое повторение подработки.", color = AppColors.SecondaryText, fontSize = 11.sp)
+                    Text(AppText.get("Выплата планируется за каждое повторение подработки."), color = AppColors.SecondaryText, fontSize = 11.sp)
                 }
 
                 TextButton(
@@ -273,11 +274,11 @@ fun CalendarEventDialog(
                         ).show()
                     }
                 ) {
-                    Text("Дата: ${CalendarDateUtils.formatDate(date)}", color = AppColors.Accent)
+                    Text(AppText.get("Дата: {arg0}", CalendarDateUtils.formatDate(date)), color = AppColors.Accent)
                 }
 
                 TimePickerField(
-                    label = "Начало (с)",
+                    label = AppText.get("Начало (с)"),
                     minute = startMinute,
                     onTimeSelected = {
                         startMinute = it
@@ -285,7 +286,7 @@ fun CalendarEventDialog(
                     }
                 )
                 TimePickerField(
-                    label = "Окончание (до)",
+                    label = AppText.get("Окончание (до)"),
                     minute = startMinute + durationMinutes,
                     onTimeSelected = { end ->
                         val selectedDuration = CalendarDisplay.endToDuration(startMinute, end)
@@ -293,16 +294,16 @@ fun CalendarEventDialog(
                             durationMinutes = selectedDuration
                             timeError = null
                         } else {
-                            timeError = "Окончание должно быть хотя бы на 15 минут позже начала."
+                            timeError = AppText.get("Окончание должно быть хотя бы на 15 минут позже начала.")
                         }
                     }
                 )
                 Text(CalendarDisplay.interval(startMinute, durationMinutes), color = AppColors.MainText)
-                Text("Если окончание раньше начала, оно относится к следующему дню. Одинаковое время означает 24 часа.", color = AppColors.SecondaryText, fontSize = 11.sp)
+                Text(AppText.get("Если окончание раньше начала, оно относится к следующему дню. Одинаковое время означает 24 часа."), color = AppColors.SecondaryText, fontSize = 11.sp)
                 timeError?.let { Text(it, color = AppColors.Red, fontSize = 12.sp) }
                 if (!editSeries && event != null && event.repeatDaysMask != 0) {
                     Text(
-                        "Дата и время меняются для выбранного повторения. Название, описание и дни недели — для всей серии.",
+                        AppText.get("Дата и время меняются для выбранного повторения. Название, описание и дни недели — для всей серии."),
                         color = AppColors.SecondaryText,
                         fontSize = 11.sp
                     )
@@ -313,7 +314,7 @@ fun CalendarEventDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Длительность", color = AppColors.MainText)
+                    Text(AppText.get("Длительность"), color = AppColors.MainText)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             onClick = {
@@ -322,10 +323,10 @@ fun CalendarEventDialog(
                             }
                         ) { Text("−", color = AppColors.Accent) }
                         Text(
-                            text = if (durationMinutes < 60) "$durationMinutes мин." else {
+                            text = if (durationMinutes < 60) AppText.get("{arg0} мин.", durationMinutes) else {
                                 val hours = durationMinutes / 60
                                 val minutes = durationMinutes % 60
-                                if (minutes == 0) "$hours ч." else "$hours ч. $minutes мин."
+                                if (minutes == 0) AppText.get("{arg0} ч.", hours) else AppText.get("{arg0} ч. {arg1} мин.", hours, minutes)
                             },
                             color = AppColors.MainText
                         )
@@ -339,18 +340,18 @@ fun CalendarEventDialog(
                 }
 
                 Text(
-                    text = "Повторять по дням недели",
+                    text = AppText.get("Повторять по дням недели"),
                     color = AppColors.MainText,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Без выбранных дней мероприятие будет одноразовым.",
+                    text = AppText.get("Без выбранных дней мероприятие будет одноразовым."),
                     color = AppColors.SecondaryText,
                     fontSize = 11.sp
                 )
 
                 TextButton(onClick = { repeatDaysMask = if (repeatDaysMask == 127) 0 else 127 }) {
-                    Text(if (repeatDaysMask == 127) "Каждый день ✓" else "Повторять каждый день", color = AppColors.Accent)
+                    Text(if (repeatDaysMask == 127) AppText.get("Каждый день ✓") else AppText.get("Повторять каждый день"), color = AppColors.Accent)
                 }
                 calendarWeekDays.indices.toList().chunked(2).forEach { indexes ->
                     Row(
@@ -374,7 +375,7 @@ fun CalendarEventDialog(
                                     colors = CheckboxDefaults.colors(
                                         checkedColor = AppColors.Accent,
                                         uncheckedColor = AppColors.SecondaryText,
-                                        checkmarkColor = Color.White
+                                        checkmarkColor = AppColors.MainText
                                     )
                                 )
                                 Text(
@@ -392,18 +393,18 @@ fun CalendarEventDialog(
             TextButton(
                 onClick = ::save
             ) {
-                Text("Сохранить", color = AppColors.Accent)
+                Text(AppText.get("Сохранить"), color = AppColors.Accent)
             }
         },
         dismissButton = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (event != null && (editSeries || onDeleteOccurrence != null) && onDeleteAll != null) {
                     TextButton(onClick = { showDeleteOptions = true }) {
-                        Text("Удалить", color = AppColors.Red)
+                        Text(AppText.get("Удалить"), color = AppColors.Red)
                     }
                 }
                 TextButton(onClick = dismiss) {
-                    Text("Отмена", color = AppColors.SecondaryText)
+                    Text(AppText.get("Отмена"), color = AppColors.SecondaryText)
                 }
             }
         }
@@ -413,15 +414,15 @@ fun CalendarEventDialog(
         AlertDialog(
             onDismissRequest = { showDeleteOptions = false },
             containerColor = AppColors.Card,
-            title = { Text("Удаление мероприятия", color = AppColors.MainText) },
+            title = { Text(AppText.get("Удаление мероприятия"), color = AppColors.MainText) },
             text = {
                 Text(
                     text = if (event.repeatDaysMask == 0) {
-                        "Удалить это мероприятие?"
+                        AppText.get("Удалить это мероприятие?")
                     } else if (editSeries) {
-                        "Удалить всю серию смен?"
+                        AppText.get("Удалить всю серию смен?")
                     } else {
-                        "Удалить только выбранный день или все повторения?"
+                        AppText.get("Удалить только выбранный день или все повторения?")
                     },
                     color = AppColors.SecondaryText
                 )
@@ -429,7 +430,7 @@ fun CalendarEventDialog(
             confirmButton = {
                 TextButton(onClick = { if (editSeries) onDeleteAll() else onDeleteOccurrence?.invoke() }) {
                     Text(
-                        text = if (editSeries || event.repeatDaysMask == 0) "Удалить" else "Только этот день",
+                        text = if (editSeries || event.repeatDaysMask == 0) AppText.get("Удалить") else AppText.get("Только этот день"),
                         color = AppColors.Accent
                     )
                 }
@@ -438,11 +439,11 @@ fun CalendarEventDialog(
                 Row {
                     if (!editSeries && event.repeatDaysMask != 0) {
                         TextButton(onClick = onDeleteAll) {
-                            Text("Всю серию", color = AppColors.Red)
+                            Text(AppText.get("Всю серию"), color = AppColors.Red)
                         }
                     }
                     TextButton(onClick = { showDeleteOptions = false }) {
-                        Text("Отмена", color = AppColors.SecondaryText)
+                        Text(AppText.get("Отмена"), color = AppColors.SecondaryText)
                     }
                 }
             }

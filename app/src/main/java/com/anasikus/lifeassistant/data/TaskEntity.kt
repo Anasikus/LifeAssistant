@@ -17,5 +17,9 @@ data class TaskEntity(
     @ColumnInfo(defaultValue = "1") val priorityLevel: Int = 1,
     @ColumnInfo(defaultValue = "0") val archived: Boolean = false,
     @ColumnInfo(defaultValue = "0") val autoArchiveSuppressed: Boolean = false,
-    @ColumnInfo(defaultValue = "0") val frozen: Boolean = false
+    @ColumnInfo(defaultValue = "0") val frozen: Boolean = false,
+    val groupId: Int? = null,
+    val parentId: Int? = null,
+    @ColumnInfo(defaultValue = "0") val spentMinutes: Int = 0,
+    @ColumnInfo(defaultValue = "0") val isProject: Boolean = false
 )

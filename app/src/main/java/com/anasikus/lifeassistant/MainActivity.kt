@@ -1,7 +1,13 @@
 
 package com.anasikus.lifeassistant
 
+import com.anasikus.lifeassistant.settings.AppText
 import android.os.Bundle
+import android.content.Context
+import com.anasikus.lifeassistant.settings.AppPreferences
+import com.anasikus.lifeassistant.ui.assistantColorScheme
+import com.anasikus.lifeassistant.ui.screens.SettingsScreen
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.content.Intent
 import android.widget.Toast
 import com.anasikus.lifeassistant.notifications.FinanceMessageCapture
@@ -42,8 +48,10 @@ import com.anasikus.lifeassistant.viewmodel.TaskViewModel
 import com.anasikus.lifeassistant.viewmodel.TaskViewModelFactory
 
 class MainActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) { super.attachBaseContext(AppPreferences.localized(newBase)) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(if (AppPreferences.dark) R.style.Theme_LifeAssistant_Dark else R.style.Theme_LifeAssistant)
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) importSharedText(intent)
 
@@ -78,7 +86,7 @@ class MainActivity : ComponentActivity() {
                 .get(CalendarViewModel::class.java)
 
         setContent {
-            MaterialTheme {
+            MaterialTheme(colorScheme = assistantColorScheme()) {
                 AssistantScreen(
                     taskViewModel = taskViewModel,
                     calendarViewModel = calendarViewModel
@@ -104,15 +112,15 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val at = System.currentTimeMillis()
-                FinanceMessageCapture.receive(applicationContext, "MANUAL", "Переданный текст", title, body, at,
+                FinanceMessageCapture.receive(applicationContext, "MANUAL", AppText.get("Переданный текст"), title, body, at,
                     "share:$at:${FinanceMessageParser.hash(body)}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Текст добавлен в Финансы → Уведомления", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, AppText.get("Текст добавлен в Финансы → Уведомления"), Toast.LENGTH_LONG).show()
                 }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Не удалось сохранить текст", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, AppText.get("Не удалось сохранить текст"), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -125,7 +133,7 @@ fun AssistantScreen(
     taskViewModel: TaskViewModel,
     calendarViewModel: CalendarViewModel
 ) {
-    var selectedDestination by remember {
+    var selectedDestination by rememberSaveable {
         mutableStateOf(AppDestination.CALENDAR)
     }
 
@@ -167,10 +175,11 @@ fun AssistantScreen(
 
             AppDestination.FINANCE -> FinanceScreen(calendarViewModel, screenModifier, financeHomeRequest)
 
+            AppDestination.SETTINGS -> SettingsScreen(screenModifier)
             AppDestination.LECTURES -> {
                 FeaturePlaceholderScreen(
-                    title = "Лекции",
-                    description = "Храни конспекты, учебные материалы и полезные заметки в одном месте.",
+                    title = AppText.get("Лекции"),
+                    description = AppText.get("Храни конспекты, учебные материалы и полезные заметки в одном месте."),
                     modifier = screenModifier
                 )
             }

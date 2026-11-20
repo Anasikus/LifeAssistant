@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,13 +20,13 @@ fun rememberDismissGuard(dirty: Boolean, onSave: () -> Unit, onDismiss: () -> Un
     if (warning) AlertDialog(
         onDismissRequest = { warning = false },
         containerColor = AppColors.Card,
-        title = { Text("Выйти из формы?", color = AppColors.MainText) },
-        text = { Text("Есть несохранённые изменения.", color = AppColors.SecondaryText) },
+        title = { Text(AppText.get("Выйти из формы?"), color = AppColors.MainText) },
+        text = { Text(AppText.get("Есть несохранённые изменения."), color = AppColors.SecondaryText) },
         confirmButton = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(onClick = { warning = false; save() }, modifier = Modifier.fillMaxWidth()) { Text("Да, сохранить") }
-                TextButton(onClick = { warning = false; dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Да, не сохранять") }
-                TextButton(onClick = { warning = false }, modifier = Modifier.fillMaxWidth()) { Text("Вернуться") }
+                Button(onClick = { warning = false; save() }, modifier = Modifier.fillMaxWidth()) { Text(AppText.get("Да, сохранить")) }
+                TextButton(onClick = { warning = false; dismiss() }, modifier = Modifier.fillMaxWidth()) { Text(AppText.get("Да, не сохранять")) }
+                TextButton(onClick = { warning = false }, modifier = Modifier.fillMaxWidth()) { Text(AppText.get("Вернуться")) }
             }
         }
     )
@@ -53,16 +54,16 @@ fun rememberGuardedAction(registry: FormDraftRegistry): (() -> Unit) -> Unit {
     var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
     val currentRegistry by rememberUpdatedState(registry)
     if (pending != null) AlertDialog(onDismissRequest = { pending = null },
-        containerColor = AppColors.Card, title = { Text("Выйти из формы?", color = AppColors.MainText) },
-        text = { Text("Есть несохранённые изменения.", color = AppColors.SecondaryText) },
+        containerColor = AppColors.Card, title = { Text(AppText.get("Выйти из формы?"), color = AppColors.MainText) },
+        text = { Text(AppText.get("Есть несохранённые изменения."), color = AppColors.SecondaryText) },
         confirmButton = {
             Column {
                 Button(onClick = {
                     val action = pending; pending = null
                     currentRegistry.save { action?.invoke() }
-                }, modifier = Modifier.fillMaxWidth()) { Text("Да, сохранить") }
-                TextButton(onClick = { val action = pending; pending = null; action?.invoke() }) { Text("Да, не сохранять") }
-                TextButton(onClick = { pending = null }) { Text("Вернуться") }
+                }, modifier = Modifier.fillMaxWidth()) { Text(AppText.get("Да, сохранить")) }
+                TextButton(onClick = { val action = pending; pending = null; action?.invoke() }) { Text(AppText.get("Да, не сохранять")) }
+                TextButton(onClick = { pending = null }) { Text(AppText.get("Вернуться")) }
             }
         })
     return remember { { action -> if (currentRegistry.dirty) pending = action else action() } }

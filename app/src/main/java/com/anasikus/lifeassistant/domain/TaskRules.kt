@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.domain
 
+import com.anasikus.lifeassistant.settings.AppText
 import com.anasikus.lifeassistant.data.TaskEntity
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -53,14 +54,14 @@ object TaskRules {
             task.deadline >= today && task.deadline <= CalendarDateUtils.addDays(today, 3)
 
     fun priorityLabel(level: Int): String = when (level.coerceIn(0, 2)) {
-        0 -> "Низкий"
-        2 -> "Высокий"
-        else -> "Обычный"
+        0 -> AppText.get("Низкий")
+        2 -> AppText.get("Высокий")
+        else -> AppText.get("Обычный")
     }
 
     fun durationLabel(minutes: Int): String = buildList {
-        if (minutes >= 60) add("${minutes / 60} ч")
-        if (minutes % 60 != 0 || minutes < 60) add("${minutes % 60} мин")
+        if (minutes >= 60) add(AppText.get("{arg0} ч", minutes / 60))
+        if (minutes % 60 != 0 || minutes < 60) add(AppText.get("{arg0} мин", minutes % 60))
     }.joinToString(" ")
 
     /** Deadline groups always outrank a manually selected priority. */
@@ -78,7 +79,8 @@ object TaskRules {
             .thenBy { it.id }
 
     fun status(task: TaskEntity): String {
-        if (task.frozen && !task.completed) return "Заморожена"
+        if (task.frozen && !task.completed) return AppText.get("Заморожена")
+        if (!task.completed && !task.isProject && TaskSessionPlanner.remaining(task) == 0) return AppText.get("Время исчерпано — увеличь оценку или заверши задачу")
         if (task.completed) {
             val completedAt = task.completedAt
 
@@ -87,16 +89,16 @@ object TaskRules {
                 task.deadline.isNotBlank() &&
                 completedAt > task.deadline
             ) {
-                "Выполнен с опозданием"
+                AppText.get("Выполнен с опозданием")
             } else {
-                "Выполнен"
+                AppText.get("Выполнен")
             }
         }
 
         return if (isOverdue(task)) {
-            "Просрочен"
+            AppText.get("Просрочен")
         } else {
-            "В ожидании"
+            AppText.get("В ожидании")
         }
     }
 }

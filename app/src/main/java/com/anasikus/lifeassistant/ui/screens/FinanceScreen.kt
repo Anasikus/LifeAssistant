@@ -1,5 +1,7 @@
 package com.anasikus.lifeassistant.ui.screens
 
+import com.anasikus.lifeassistant.settings.AppText
+import com.anasikus.lifeassistant.ui.assistantColorScheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -102,7 +104,7 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier, h
         return
     }
 
-    MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
+    MaterialTheme(colorScheme = assistantColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
         LazyColumn(
             modifier = modifier.background(AppColors.Background),
             contentPadding = PaddingValues(16.dp),
@@ -110,9 +112,9 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier, h
         ) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Финансы", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText)
+                    Text(AppText.get("Финансы"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText)
                     TextButton(onClick = { showInbox = true }) {
-                        Text("Уведомления (${inbox.count { it.status == "PENDING" }})")
+                        Text(AppText.get("Уведомления ({arg0})", inbox.count { it.status == "PENDING" }))
                     }
                 }
             }
@@ -128,87 +130,84 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier, h
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FinanceMetric("Заработано", totals.earned, Modifier.weight(1f))
-                    FinanceMetric("Доход", totals.income, Modifier.weight(1f))
+                    FinanceMetric(AppText.get("Заработано"), totals.earned, Modifier.weight(1f))
+                    FinanceMetric(AppText.get("Доход"), totals.income, Modifier.weight(1f))
                 }
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FinanceMetric("Расход", totals.expense, Modifier.weight(1f))
-                    FinanceMetric("На руках", totals.available, Modifier.weight(1f))
+                    FinanceMetric(AppText.get("Расход"), totals.expense, Modifier.weight(1f))
+                    FinanceMetric(AppText.get("На руках"), totals.available, Modifier.weight(1f))
                 }
             }
             item {
                 if (cutoff == today) {
-                    FinanceMetric("Зарезервировано", totals.reserved, Modifier.fillMaxWidth())
-                    Text("На руках до резерва: ${ShiftRules.money(totals.cash)}", color = AppColors.SecondaryText)
+                    FinanceMetric(AppText.get("Зарезервировано"), totals.reserved, Modifier.fillMaxWidth())
+                    Text(AppText.get("На руках до резерва: {arg0}", ShiftRules.money(totals.cash)), color = AppColors.SecondaryText)
                 }
-                Text("Перенос на начало месяца: ${ShiftRules.money(totals.openingCash)}", color = AppColors.SecondaryText)
-                Text("Заработано — начисления за завершённые смены и подработки за вычетом выплат по ним.", color = AppColors.SecondaryText)
+                Text(AppText.get("Перенос на начало месяца: {arg0}", ShiftRules.money(totals.openingCash)), color = AppColors.SecondaryText)
+                Text(AppText.get("Заработано — начисления за завершённые смены и подработки за вычетом выплат по ним."), color = AppColors.SecondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { newTransfer = false; newIncome = true }, modifier = Modifier.weight(1f)) { Text("Доход") }
-                    OutlinedButton(onClick = { newTransfer = false; newIncome = false }, modifier = Modifier.weight(1f)) { Text("Расход") }
-                    OutlinedButton(onClick = { newTransfer = true; newIncome = false }, modifier = Modifier.weight(1f)) { Text("Перевод", maxLines = 1) }
+                    Button(onClick = { newTransfer = false; newIncome = true }, modifier = Modifier.weight(1f)) { Text(AppText.get("Доход")) }
+                    OutlinedButton(onClick = { newTransfer = false; newIncome = false }, modifier = Modifier.weight(1f)) { Text(AppText.get("Расход")) }
+                    OutlinedButton(onClick = { newTransfer = true; newIncome = false }, modifier = Modifier.weight(1f)) { Text(AppText.get("Перевод"), maxLines = 1) }
                 }
             }
             item {
                 Column {
-                    OutlinedButton(onClick = { showPlans = true }, modifier = Modifier.fillMaxWidth()) { Text("Регулярные платежи") }
+                    OutlinedButton(onClick = { showPlans = true }, modifier = Modifier.fillMaxWidth()) { Text(AppText.get("Регулярные платежи")) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { showCategories = true }) { Text("Категории расходов") }
-                        TextButton(onClick = { showStatistics = true }) { Text("Статистика") }
+                        TextButton(onClick = { showCategories = true }) { Text(AppText.get("Категории расходов")) }
+                        TextButton(onClick = { showStatistics = true }) { Text(AppText.get("Статистика")) }
                     }
-                    TextButton(onClick = { showIncomeCategories = true }) { Text("Категории доходов") }
+                    TextButton(onClick = { showIncomeCategories = true }) { Text(AppText.get("Категории доходов")) }
                 }
             }
             financeError?.let { message -> item { Text(message, color = AppColors.Red) } }
             if (cutoff == today && reserved.isNotEmpty()) {
-                item { Text("Будущие расходы · резерв", color = AppColors.MainText) }
+                item { Text(AppText.get("Будущие расходы · резерв"), color = AppColors.MainText) }
                 items(reserved, key = { "reserved:${it.id}" }) { transaction ->
                     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                         Column(Modifier.padding(12.dp)) {
                             Text("${ShiftRules.money(transaction.amountCents)} · ${CalendarDateUtils.formatDate(transaction.date)}", color = AppColors.MainText)
-                            Text(transaction.note.ifBlank { categories.find { it.id == transaction.expenseCategoryId }?.name ?: "Запланированный расход" }, color = AppColors.SecondaryText)
-                            Text("Учтён в резерве. В день операции перейдёт в расходы без повторного вычета.", color = AppColors.SecondaryText)
+                            Text(transaction.note.ifBlank { categories.find { it.id == transaction.expenseCategoryId }?.name ?: AppText.get("Запланированный расход") }, color = AppColors.SecondaryText)
+                            Text(AppText.get("Учтён в резерве. В день операции перейдёт в расходы без повторного вычета."), color = AppColors.SecondaryText)
                             Row {
-                                TextButton(onClick = { editing = transaction }) { Text("Изменить") }
-                                TextButton(onClick = { deleting = transaction }) { Text("Отменить расход") }
+                                TextButton(onClick = { editing = transaction }) { Text(AppText.get("Изменить")) }
+                                TextButton(onClick = { deleting = transaction }) { Text(AppText.get("Отменить расход")) }
                             }
                         }
                     }
                 }
             }
             if (sources.isNotEmpty()) {
-                item { Text("К выплате по работам", color = AppColors.MainText) }
+                item { Text(AppText.get("К выплате по работам"), color = AppColors.MainText) }
                 items(sources, key = { it.key }) { source ->
                     Column {
                         Text("${source.name} · ${ShiftRules.money(FinanceRules.outstanding(source, paymentsThroughCutoff))}", color = AppColors.SecondaryText)
-                        source.plannedAdvance?.let { Text("Плановый аванс · ${ShiftRules.money(it)}", color = AppColors.SecondaryText) }
+                        source.plannedAdvance?.let { Text(AppText.get("Плановый аванс · {arg0}", ShiftRules.money(it)), color = AppColors.SecondaryText) }
                     }
                 }
             }
-            item { Text("История операций", color = AppColors.MainText) }
-            if (monthTransactions.isEmpty()) item { Text("Операций пока нет", color = AppColors.SecondaryText) }
+            item { Text(AppText.get("История операций"), color = AppColors.MainText) }
+            if (monthTransactions.isEmpty()) item { Text(AppText.get("Операций пока нет"), color = AppColors.SecondaryText) }
             items(monthTransactions, key = { it.id }) { transaction ->
                 Card(colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
                         val sign = if (transaction.transfer) "↔ " else if (transaction.income) "+" else "−"
                         Text("$sign${ShiftRules.money(transaction.amountCents)}", color = if (transaction.transfer) AppColors.SecondaryText else if (transaction.income) AppColors.Green else AppColors.Red)
-                        if (transaction.transfer) Text("Перевод · не влияет на остаток", color = AppColors.SecondaryText)
+                        if (transaction.transfer) Text(AppText.get("Перевод · не влияет на остаток"), color = AppColors.SecondaryText)
                         Text(CalendarDateUtils.formatDate(transaction.date), color = AppColors.SecondaryText)
-                        if (!transaction.income && !transaction.transfer) {
-                            ExpenseCategoryPicker(categories, transaction.expenseCategoryId) {
-                                viewModel.setExpenseCategory(transaction.id, it)
-                            }
+                        if (!transaction.transfer) {
+                            val categoryName = if (transaction.income)
+                                incomeCategories.find { it.id == transaction.incomeCategoryId }?.name ?: transaction.sourceName
+                                else categories.find { it.id == transaction.expenseCategoryId }?.name
+                            Text(categoryName ?: AppText.get("Без категории"), color = AppColors.SecondaryText)
                         }
-                        if (transaction.income && !transaction.transfer) IncomeCategoryPicker(incomeCategories, transaction.incomeCategoryId) {
-                            viewModel.setIncomeCategory(transaction.id, it)
-                        }
-                        transaction.sourceName?.let { Text(it, color = AppColors.MainText) }
                         if (transaction.note.isNotBlank()) Text(transaction.note, color = AppColors.SecondaryText)
                         Row {
-                            if (transaction.inboxMessageId == null) TextButton(onClick = { editing = transaction }) { Text("Изменить") }
-                            TextButton(onClick = { deleting = transaction }) { Text("Удалить") }
+                            TextButton(onClick = { editing = transaction }) { Text(AppText.get("Изменить")) }
+                            TextButton(onClick = { deleting = transaction }) { Text(AppText.get("Удалить")) }
                         }
                     }
                 }
@@ -233,14 +232,14 @@ fun FinanceScreen(viewModel: CalendarViewModel, modifier: Modifier = Modifier, h
         deleting?.let { transaction ->
             AlertDialog(
                 onDismissRequest = { deleting = null },
-                title = { Text("Удалить операцию?") },
+                title = { Text(AppText.get("Удалить операцию?")) },
                 confirmButton = {
                     TextButton(onClick = {
                         viewModel.deleteFinanceTransaction(transaction.id)
                         deleting = null
-                    }) { Text("Удалить") }
+                    }) { Text(AppText.get("Удалить")) }
                 },
-                dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } }
+                dismissButton = { TextButton(onClick = { deleting = null }) { Text(AppText.get("Отмена")) } }
             )
         }
     }
@@ -287,32 +286,34 @@ private fun TransactionDialog(
     }
     val dismiss = rememberDismissGuard(snapshot != initial, ::save, onDismiss)
     AlertDialog(onDismissRequest = dismiss,
-        title = { Text(if (existing != null) "Изменить операцию" else if (transfer) "Добавить перевод" else if (income) "Добавить доход" else "Добавить расход") },
+        title = { Text(if (existing != null) AppText.get("Изменить операцию") else if (transfer) AppText.get("Добавить перевод") else if (income) AppText.get("Добавить доход") else AppText.get("Добавить расход")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Сумма, ₽") }, singleLine = true,
+                OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text(AppText.get("Сумма, ₽")) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth(), label = { Text("Комментарий") })
-                OutlinedDateField("Дата операции", date) { date = it }
+                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth(), label = { Text(AppText.get("Комментарий")) })
+                OutlinedDateField(AppText.get("Дата операции"), date) { date = it }
                 if (!income && !transfer) {
                     ExpenseCategoryPicker(categories, categoryId) { categoryId = it }
-                    if (date > today) Text("Будущий расход: сумма попадёт в резерв и уменьшит доступный остаток. В дату операции она перейдёт в расходы.", color = AppColors.Yellow)
+                    if (date > today) Text(AppText.get("Будущий расход: сумма попадёт в резерв и уменьшит доступный остаток. В дату операции она перейдёт в расходы."), color = AppColors.Yellow)
                 }
-                if (transfer) Text("Перевод сохраняется без изменения дохода, расхода и остатка.")
+                if (transfer) Text(AppText.get("Перевод сохраняется без изменения дохода, расхода и остатка."))
                 if (income && !transfer) {
-                    IncomeCategoryPicker(incomeCategories, incomeCategoryId) { incomeCategoryId = it }
-                    TextButton(onClick = onManageIncome) { Text("Добавить или изменить категории") }
-                    Text("Например: возврат долга, помощь родителей, подарок. Категории можно создать в разделе финансов.", color = AppColors.SecondaryText)
-                    val choices = listOf("" to "Не связано с работой") + sources.map { it.key to it.name } +
+                    val workName = sources.find { it.key == sourceKey }?.name ?: existing?.sourceName?.takeIf { sourceKey != null }
+                    if (sourceKey != null) Text(AppText.get("Категория дохода: {arg0}", workName.orEmpty()), color = AppColors.MainText)
+                    else IncomeCategoryPicker(incomeCategories, incomeCategoryId) { incomeCategoryId = it }
+                    if (sourceKey == null) TextButton(onClick = onManageIncome) { Text(AppText.get("Добавить или изменить категории")) }
+                    Text(AppText.get("Например: возврат долга, помощь родителей, подарок. Категории можно создать в разделе финансов."), color = AppColors.SecondaryText)
+                    val choices = listOf("" to AppText.get("Не связано с работой")) + sources.map { it.key to it.name } +
                         listOfNotNull(existing?.sourceKey?.takeIf { key -> !key.startsWith("income:") && sources.none { it.key == key } }?.let { it to existing.sourceName.orEmpty() })
-                    ChoiceField("Выплата за работу (необязательно)", choices.find { it.first == sourceKey.orEmpty() }?.second ?: "Не связано с работой", choices) {
-                        sourceKey = it.takeIf(String::isNotBlank)
+                    ChoiceField(AppText.get("Выплата за работу (необязательно)"), choices.find { it.first == sourceKey.orEmpty() }?.second ?: AppText.get("Не связано с работой"), choices) {
+                        sourceKey = it.takeIf(String::isNotBlank); incomeCategoryId = null
                     }
-                    Text("Только связь с работой уменьшает сумму «Заработано». Категория дохода сама по себе её не меняет.", color = AppColors.SecondaryText)
+                    Text(AppText.get("Только связь с работой уменьшает сумму «Заработано». Категория дохода сама по себе её не меняет."), color = AppColors.SecondaryText)
                 }
-                if (validation) Text("Укажи положительную сумму. Будущая дата доступна для расходов.", color = AppColors.Red)
+                if (validation) Text(AppText.get("Укажи положительную сумму. Будущая дата доступна для расходов."), color = AppColors.Red)
                 error?.let { Text(it, color = AppColors.Red) }
             }
-        }, confirmButton = { Button(onClick = ::save) { Text("Сохранить") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } })
+        }, confirmButton = { Button(onClick = ::save) { Text(AppText.get("Сохранить")) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(AppText.get("Отмена")) } })
 }

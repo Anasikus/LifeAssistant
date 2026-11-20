@@ -1,5 +1,7 @@
 package com.anasikus.lifeassistant.ui.screens
 
+import com.anasikus.lifeassistant.settings.AppText
+import com.anasikus.lifeassistant.ui.assistantColorScheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -50,25 +52,25 @@ internal fun ShiftScheduleScreen(
             .groupBy { it.date }
     }
 
-    MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
+    MaterialTheme(colorScheme = assistantColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
         Column(
             modifier.background(AppColors.Background).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            TextButton(onClick = onBack) { Text("‹ К календарю") }
-            Text("График смен", style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText)
-            PlanningDateField("Месяц и выбранный день", date) { date = it }
-            Button(onClick = { showSettings = true }) { Text("Шаблон, отметки дня и прогноз") }
+            TextButton(onClick = onBack) { Text(AppText.get("‹ К календарю")) }
+            Text(AppText.get("График смен"), style = MaterialTheme.typography.headlineSmall, color = AppColors.MainText)
+            PlanningDateField(AppText.get("Месяц и выбранный день"), date) { date = it }
+            Button(onClick = { showSettings = true }) { Text(AppText.get("Шаблон, отметки дня и прогноз")) }
             OutlinedButton(
                 onClick = { editing = null; showEditor = true },
                 enabled = workCategories.isNotEmpty()
-            ) { Text("Добавить работу или подработку") }
+            ) { Text(AppText.get("Добавить работу или подработку")) }
             if (workCategories.isEmpty()) {
-                Text("Создай категорию работы или подработки в настройках категорий календаря.", color = AppColors.SecondaryText)
+                Text(AppText.get("Создай категорию работы или подработки в настройках категорий календаря."), color = AppColors.SecondaryText)
             }
 
             if (work.isNotEmpty()) {
-                Text("Работы и подработки", color = AppColors.MainText)
+                Text(AppText.get("Работы и подработки"), color = AppColors.MainText)
                 work.forEach { event ->
                     TextButton(onClick = { editing = event; showEditor = true }) {
                         Text(event.title)
@@ -78,13 +80,13 @@ internal fun ShiftScheduleScreen(
             Text(CalendarDateUtils.formatMonth(date), color = AppColors.MainText)
             val templateByDate = monthDays.associateBy { it.date }
             val listedDates = (templateByDate.keys + monthWork.keys).sorted()
-            if (listedDates.isEmpty()) Text("На этот месяц смен пока нет", color = AppColors.SecondaryText)
+            if (listedDates.isEmpty()) Text(AppText.get("На этот месяц смен пока нет"), color = AppColors.SecondaryText)
             listedDates.forEach { day ->
                 Card(colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                     Column(Modifier.fillMaxWidth().padding(10.dp)) {
                         Text(CalendarDateUtils.formatDate(day), color = AppColors.MainText)
                         templateByDate[day]?.let { shift ->
-                            val status = shiftStatus(shift.status) + if (shift.predicted) " · предположение" else ""
+                            val status = shiftStatus(shift.status) + if (shift.predicted) AppText.get(" · предположение") else ""
                             Text(status, color = AppColors.SecondaryText)
                             if (shift.status == "WORK") {
                                 Text(CalendarDisplay.interval(shift.startMinute, shift.durationMinutes), color = AppColors.SecondaryText)
@@ -92,7 +94,7 @@ internal fun ShiftScheduleScreen(
                         }
                         monthWork[day].orEmpty().forEach { occurrence ->
                             val interval = CalendarDisplay.interval(occurrence.instanceStartMinute, occurrence.instanceDurationMinutes)
-                            val continuation = if (occurrence.date != occurrence.instanceDate) " · продолжение" else ""
+                            val continuation = if (occurrence.date != occurrence.instanceDate) AppText.get(" · продолжение") else ""
                             Text("${occurrence.event.title} · $interval$continuation", color = AppColors.SecondaryText)
                         }
                     }
@@ -106,14 +108,14 @@ internal fun ShiftScheduleScreen(
             CompositionLocalProvider(LocalFormDraftRegistry provides drafts) {
             AlertDialog(
                 onDismissRequest = { protect { showSettings = false } },
-                title = { Text("Настройки графика") },
+                title = { Text(AppText.get("Настройки графика")) },
                 text = {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         ShiftSettings(date, pattern, days, viewModel)
                         error?.let { Text(it, color = AppColors.Red) }
                     }
                 },
-                confirmButton = { TextButton(onClick = { protect { showSettings = false } }) { Text("Закрыть") } }
+                confirmButton = { TextButton(onClick = { protect { showSettings = false } }) { Text(AppText.get("Закрыть")) } }
             )
             }
         }

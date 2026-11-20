@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.domain
 
+import com.anasikus.lifeassistant.settings.AppText
 import com.anasikus.lifeassistant.data.CalendarEventEntity
 import com.anasikus.lifeassistant.data.CalendarEventOverrideEntity
 import com.anasikus.lifeassistant.data.FinanceTransactionEntity
@@ -33,7 +34,7 @@ object FinanceRules {
             val accrued = ShiftRules.days(firstShift, today, pattern, days)
                 .filter { !it.predicted && ended(it.date, it.startMinute, it.durationMinutes, today, minute) }
                 .sumOf(ShiftRules::payment)
-            add(FinanceSource("schedule", "График смен", accrued))
+            add(FinanceSource("schedule", AppText.get("График смен"), accrued))
         }
 
         val paidEvents = events.filter {

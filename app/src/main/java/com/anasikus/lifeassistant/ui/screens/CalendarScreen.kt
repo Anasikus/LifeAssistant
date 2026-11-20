@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.screens
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,11 +89,12 @@ import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
 import com.anasikus.lifeassistant.viewmodel.TaskViewModel
 import kotlin.math.roundToInt
 
-private enum class CalendarViewMode(val label: String) {
+private enum class CalendarViewMode(private val labelKey: String) {
     DAY("День"),
     WEEK("Неделя"),
     MONTH("Месяц"),
-    YEAR("Год")
+    YEAR("Год");
+    val label: String get() = AppText.get(labelKey)
 }
 
 @Composable
@@ -114,6 +116,7 @@ fun CalendarScreen(
     val eventOverrides by viewModel.eventOverrides.collectAsState()
     val placements by viewModel.placements.collectAsState()
     val tasks by taskViewModel.tasks.collectAsStateWithLifecycle()
+    val sessions by taskViewModel.sessions.collectAsStateWithLifecycle()
     val taskError by taskViewModel.error.collectAsState()
     val eventError by viewModel.financeError.collectAsState()
     val categories by viewModel.categories.collectAsState()
@@ -186,7 +189,7 @@ fun CalendarScreen(
             effectiveShifts.filter { it.status == "WORK" }.mapIndexed { index, day ->
                 CalendarEventEntity(
                     id = -index - 1,
-                    title = if (day.predicted) "Работа · предположение" else "Работа · смена",
+                    title = if (day.predicted) AppText.get("Работа · предположение") else AppText.get("Работа · смена"),
                     startDate = day.date,
                     startMinute = day.startMinute,
                     durationMinutes = day.durationMinutes
@@ -200,7 +203,7 @@ fun CalendarScreen(
         val paid = financeTransactions.filter { !it.transfer && !it.income }.mapNotNull { it.planKey }.toSet()
         paymentPlans.flatMap { PaymentPlanRules.between(it, displayStart, displayEnd) }
             .mapIndexed { index, payment ->
-                val status = if (payment.key in paid) "Оплачено" else "Платёж"
+                val status = if (payment.key in paid) AppText.get("Оплачено") else AppText.get("Платёж")
                 val event = CalendarEventEntity(
                     id = Int.MIN_VALUE + index,
                     title = "$status · ${payment.plan.title}",
@@ -215,15 +218,14 @@ fun CalendarScreen(
     val displayEvents = remember(occurrences, shiftBlocks, paymentBlocks) {
         (occurrences + shiftBlocks + paymentBlocks).sortedWith(compareBy({ it.date }, { it.startMinute }))
     }
-    val scheduledTasks = remember(tasks, occurrences, shiftBlocks, effectiveShifts, placements, rangeStart, rangeEnd, clockMinute) {
-        val tentativeDates = effectiveShifts.filter { it.predicted }.map { it.date }.toSet()
-        CalendarTaskScheduler.schedule(
-            tasks = tasks,
-            events = occurrences + shiftBlocks.filter { it.instanceDate !in tentativeDates },
-            rangeStart = rangeStart,
-            rangeEnd = rangeEnd,
-            placements = placements
-        )
+    val scheduledTasks = remember(tasks, sessions, rangeStart, rangeEnd, clockMinute) {
+        val byId = tasks.associateBy { it.id }
+        sessions.filter { it.date in rangeStart..rangeEnd }.mapNotNull { slot ->
+            byId[slot.taskId]?.takeIf { !it.frozen && !it.completed && !it.isProject }?.let { task ->
+                ScheduledTask(task, slot.date, slot.startMinute, slot.durationMinutes,
+                    CalendarTaskScheduler.priority(task), slot.id, slot.accounted, byId[task.parentId]?.title)
+            }
+        }
     }
 
     fun movePeriod(direction: Int) {
@@ -269,17 +271,9 @@ fun CalendarScreen(
         durationMinutes: Int = scheduled.durationMinutes,
         hidden: Boolean = false
     ) {
-        val safeDuration = durationMinutes.coerceIn(15, 24 * 60)
-        val safeStart = startMinute.coerceIn(0, 24 * 60 - safeDuration)
-        viewModel.savePlacement(
-            CalendarTaskPlacementEntity(
-                taskId = scheduled.task.id,
-                date = scheduled.date,
-                startMinute = safeStart,
-                durationMinutes = safeDuration,
-                hidden = hidden
-            )
-        )
+        if (scheduled.accounted) return
+        if (hidden) taskViewModel.skipSession(scheduled.sessionId)
+        else taskViewModel.moveSession(scheduled.sessionId, scheduled.date, startMinute, durationMinutes)
     }
 
     fun saveEventPosition(
@@ -330,19 +324,21 @@ fun CalendarScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Календарь", Modifier.weight(1f), color = AppColors.MainText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text(AppText.get("Календарь"), Modifier.weight(1f), color = AppColors.MainText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 TextButton(onClick = { anchorDate = CalendarDateUtils.today(); mode = CalendarViewMode.DAY }) {
-                    Text("Сегодня", color = AppColors.Accent)
+                    Text(AppText.get("Сегодня"), color = AppColors.Accent)
                 }
                 Box {
                     TextButton(onClick = { showSettingsMenu = true }) { Text("⋮", color = AppColors.Accent, fontSize = 22.sp) }
                     DropdownMenu(expanded = showSettingsMenu, onDismissRequest = { showSettingsMenu = false }) {
-                        DropdownMenuItem(text = { Text("Категории и праздники") }, onClick = { showSettingsMenu = false; showPlanningDialog = true })
-                        DropdownMenuItem(text = { Text("Регулярные платежи") }, onClick = { showSettingsMenu = false; paymentDialogDate = anchorDate })
-                        DropdownMenuItem(text = { Text("Шаг сетки") }, onClick = { showSettingsMenu = false; mode = CalendarViewMode.DAY; showGridControls = !showGridControls })
+                        DropdownMenuItem(text = { Text(AppText.get("Категории и праздники")) }, onClick = { showSettingsMenu = false; showPlanningDialog = true })
+                        DropdownMenuItem(text = { Text(AppText.get("Регулярные платежи")) }, onClick = { showSettingsMenu = false; paymentDialogDate = anchorDate })
+                        DropdownMenuItem(text = { Text(AppText.get("Шаг сетки")) }, onClick = { showSettingsMenu = false; mode = CalendarViewMode.DAY; showGridControls = !showGridControls })
                     }
                 }
             }
+
+            taskError?.let { Text(it, color = AppColors.Red) }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -390,12 +386,12 @@ fun CalendarScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Шаг сетки", color = AppColors.SecondaryText, fontSize = 13.sp)
+                    Text(AppText.get("Шаг сетки"), color = AppColors.SecondaryText, fontSize = 13.sp)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             onClick = { intervalMinutes = (intervalMinutes - 15).coerceAtLeast(15) }
                         ) { Text("−", color = AppColors.Accent) }
-                        Text("$intervalMinutes мин.", color = AppColors.MainText)
+                        Text(AppText.get("{arg0} мин.", intervalMinutes), color = AppColors.MainText)
                         TextButton(
                             onClick = { intervalMinutes = (intervalMinutes + 15).coerceAtMost(120) }
                         ) { Text("+", color = AppColors.Accent) }
@@ -405,7 +401,7 @@ fun CalendarScreen(
 
             effectiveShifts.find { it.date == anchorDate }?.let { day ->
                 Text(
-                    "${shiftStatus(day.status)}${if (day.predicted) " · предположение ?" else ""}" +
+                    "${shiftStatus(day.status)}${if (day.predicted) AppText.get(" · предположение ?") else ""}" +
                         if (day.status == "WORK") " · ${CalendarDisplay.interval(day.startMinute, day.durationMinutes)}" else "",
                     color = shiftColor(day.status), fontSize = 12.sp
                 )
@@ -416,20 +412,20 @@ fun CalendarScreen(
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { openNewEvent(anchorDate, 9 * 60) }, modifier = Modifier.weight(1f)) {
-                    Text("＋ Добавить", color = AppColors.Accent)
+                    Text(AppText.get("＋ Добавить"), color = AppColors.Accent)
                 }
-                TextButton(onClick = { showShifts = true }) { Text("Смены", color = AppColors.Accent) }
+                TextButton(onClick = { showShifts = true }) { Text(AppText.get("Смены"), color = AppColors.Accent) }
             }
 
             if (mode == CalendarViewMode.DAY && anchorDate == CalendarDateUtils.today()) {
                 val placedIds = scheduledTasks.map { it.task.id }.toSet()
                 val unplaced = tasks.count { task ->
                     val saved = placements.find { it.taskId == task.id }
-                    !task.completed && !task.archived && !task.frozen && task.id !in placedIds &&
+                    !task.completed && !task.archived && !task.frozen && !task.isProject && com.anasikus.lifeassistant.domain.TaskSessionPlanner.remaining(task) > 0 && task.id !in placedIds &&
                         (task.startDate.isBlank() || task.startDate <= anchorDate) &&
                         (saved == null || (saved.hidden && saved.date != anchorDate))
                 }
-                if (unplaced > 0) Text("Для $unplaced задач нет свободного окна сегодня. Они остаются в разделе «Задачи». Для поиска окна в следующие дни выбери «Неделя».",
+                if (unplaced > 0) Text(AppText.get("Для {arg0} задач нет свободного окна сегодня. Они остаются в разделе «Задачи». Для поиска окна в следующие дни выбери «Неделя».", unplaced),
                     color = AppColors.SecondaryText, fontSize = 12.sp)
             }
 
@@ -442,7 +438,7 @@ fun CalendarScreen(
                         tasks = scheduledTasks.filter { it.date == anchorDate },
                         onAddEvent = ::openNewEvent,
                         onEventClick = ::openExistingEvent,
-                        onTaskClick = { taskForActions = it },
+                        onTaskClick = { if (!it.accounted) taskForActions = it },
                         onChangeTask = { task, range ->
                             saveTaskPlacement(task, startMinute = range.startMinute, durationMinutes = range.durationMinutes)
                         },
@@ -460,7 +456,7 @@ fun CalendarScreen(
                         onPaymentClick = ::openExistingEvent,
                         shifts = effectiveShifts,
                         specialDates = specialDates,
-                        onTaskClick = { taskForActions = it },
+                        onTaskClick = { if (!it.accounted) taskForActions = it },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -511,9 +507,10 @@ fun CalendarScreen(
             error = taskError,
             creationHeader = { CalendarCreationTabs(true) { createTask = it } },
             onDismiss = { showEventDialog = false },
-            onSave = { title, description, start, deadline, duration, priority ->
+            groups = taskViewModel.groups.collectAsStateWithLifecycle().value,
+            onSave = { title, description, start, deadline, duration, priority, group, spent ->
                 taskViewModel.addTask(TaskEntity(title = title, description = description, startDate = start, deadline = deadline,
-                    estimatedDurationMinutes = duration, priorityLevel = priority)) { showEventDialog = false }
+                    estimatedDurationMinutes = duration, priorityLevel = priority, groupId = group, spentMinutes = spent)) { showEventDialog = false }
             }
         )
     } else if (showEventDialog) {
@@ -613,10 +610,10 @@ fun CalendarScreen(
         AlertDialog(
             onDismissRequest = { taskForActions = null },
             containerColor = AppColors.Card,
-            title = { Text(scheduled.task.title, color = AppColors.MainText) },
+            title = { Text(scheduled.displayTitle, color = AppColors.MainText) },
             text = {
                 Text(
-                    "Убрать задачу только из этого дня или удалить её из приложения?",
+                    AppText.get("Убрать задачу только из этого дня или удалить её из приложения?"),
                     color = AppColors.SecondaryText
                 )
             },
@@ -626,13 +623,13 @@ fun CalendarScreen(
                         taskForTimeEdit = scheduled
                         taskForActions = null
                     }) {
-                        Text("Изменить время", color = AppColors.Accent)
+                        Text(AppText.get("Изменить время"), color = AppColors.Accent)
                     }
                     TextButton(onClick = {
                         saveTaskPlacement(scheduled, hidden = true)
                         taskForActions = null
                     }) {
-                        Text("Убрать с дня", color = AppColors.Accent)
+                        Text(AppText.get("Убрать с дня"), color = AppColors.Accent)
                     }
                 }
             },
@@ -642,10 +639,10 @@ fun CalendarScreen(
                         taskForFullDelete = scheduled
                         taskForActions = null
                     }) {
-                        Text("Удалить полностью", color = AppColors.Red)
+                        Text(AppText.get("Удалить полностью"), color = AppColors.Red)
                     }
                     TextButton(onClick = { taskForActions = null }) {
-                        Text("Отмена", color = AppColors.SecondaryText)
+                        Text(AppText.get("Отмена"), color = AppColors.SecondaryText)
                     }
                 }
             }
@@ -671,10 +668,10 @@ fun CalendarScreen(
         AlertDialog(
             onDismissRequest = { taskForFullDelete = null },
             containerColor = AppColors.Card,
-            title = { Text("Удалить задачу полностью?", color = AppColors.MainText) },
+            title = { Text(AppText.get("Удалить задачу полностью?"), color = AppColors.MainText) },
             text = {
                 Text(
-                    "«${scheduled.task.title}» будет удалена из списка задач и календаря.",
+                    AppText.get("«{arg0}» будет удалена из списка задач и календаря.", scheduled.displayTitle),
                     color = AppColors.SecondaryText
                 )
             },
@@ -684,12 +681,12 @@ fun CalendarScreen(
                     taskViewModel.deleteTask(scheduled.task)
                     taskForFullDelete = null
                 }) {
-                    Text("Удалить", color = AppColors.Red)
+                    Text(AppText.get("Удалить"), color = AppColors.Red)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { taskForFullDelete = null }) {
-                    Text("Отмена", color = AppColors.SecondaryText)
+                    Text(AppText.get("Отмена"), color = AppColors.SecondaryText)
                 }
             }
         )
@@ -706,10 +703,10 @@ private fun CalendarCreationTabs(task: Boolean, onSelect: (Boolean) -> Unit) {
     }
     Row {
         TextButton(onClick = { select(false) }) {
-            Text("Мероприятие", color = if (task) AppColors.SecondaryText else AppColors.Accent)
+            Text(AppText.get("Мероприятие"), color = if (task) AppColors.SecondaryText else AppColors.Accent)
         }
         TextButton(onClick = { select(true) }) {
-            Text("Задача", color = if (task) AppColors.Accent else AppColors.SecondaryText)
+            Text(AppText.get("Задача"), color = if (task) AppColors.Accent else AppColors.SecondaryText)
         }
     }
 }
@@ -736,16 +733,16 @@ private fun TaskTimeEditDialog(
     var validationError by remember { mutableStateOf<String?>(null) }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedTextColor = Color.White,
-        unfocusedTextColor = Color.White,
-        disabledTextColor = Color.White,
+        focusedTextColor = AppColors.MainText,
+        unfocusedTextColor = AppColors.MainText,
+        disabledTextColor = AppColors.MainText,
         cursorColor = AppColors.Accent,
         focusedBorderColor = AppColors.Accent,
         unfocusedBorderColor = AppColors.SecondaryText,
         focusedLabelColor = AppColors.Accent,
-        unfocusedLabelColor = Color.White,
-        focusedTrailingIconColor = Color.White,
-        unfocusedTrailingIconColor = Color.White
+        unfocusedLabelColor = AppColors.MainText,
+        focusedTrailingIconColor = AppColors.MainText,
+        unfocusedTrailingIconColor = AppColors.MainText
     )
 
     fun currentDuration(): Int? {
@@ -770,13 +767,13 @@ private fun TaskTimeEditDialog(
     fun save() {
                 val duration = currentDuration()
                 when {
-                    duration == null -> validationError = "Введи часы и минуты числами."
+                    duration == null -> validationError = AppText.get("Введи часы и минуты числами.")
                     startMinute < 0 || startMinute >= 24 * 60 ->
-                        validationError = "Начало должно быть в диапазоне 00:00–23:59."
-                    duration < 15 -> validationError = "Минимальная длительность — 15 минут."
+                        validationError = AppText.get("Начало должно быть в диапазоне 00:00–23:59.")
+                    duration < 15 -> validationError = AppText.get("Минимальная длительность — 15 минут.")
                     startMinute + duration != endMinute ->
-                        validationError = "Проверь окончание и длительность."
-                    endMinute > 24 * 60 -> validationError = "Задача должна завершаться не позднее 24:00."
+                        validationError = AppText.get("Проверь окончание и длительность.")
+                    endMinute > 24 * 60 -> validationError = AppText.get("Задача должна завершаться не позднее 24:00.")
                     else -> onSave(startMinute, duration)
                 }
 
@@ -786,16 +783,16 @@ private fun TaskTimeEditDialog(
     AlertDialog(
         onDismissRequest = dismiss,
         containerColor = AppColors.Card,
-        title = { Text("Время задачи", color = Color.White) },
+        title = { Text(AppText.get("Время задачи"), color = AppColors.MainText) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(scheduled.task.title, color = Color.White, fontSize = 13.sp)
+                Text(scheduled.displayTitle, color = AppColors.MainText, fontSize = 13.sp)
 
                 TimePickerField(
-                    label = "Начало (с)",
+                    label = AppText.get("Начало (с)"),
                     minute = startMinute,
                     onTimeSelected = { selected ->
                         startMinute = selected
@@ -805,7 +802,7 @@ private fun TaskTimeEditDialog(
                 )
 
                 TimePickerField(
-                    label = "Окончание (до)",
+                    label = AppText.get("Окончание (до)"),
                     minute = endMinute,
                     endOfDayAtMidnight = true,
                     onTimeSelected = { selectedEnd ->
@@ -814,7 +811,7 @@ private fun TaskTimeEditDialog(
                             updateDurationFields(selectedEnd - startMinute)
                             validationError = null
                         } else {
-                            validationError = "Окончание должно быть позже начала."
+                            validationError = AppText.get("Окончание должно быть позже начала.")
                         }
                     }
                 )
@@ -828,7 +825,7 @@ private fun TaskTimeEditDialog(
                             updateEndFromDuration()
                             validationError = null
                         },
-                        label = { Text("Часы") },
+                        label = { Text(AppText.get("Часы")) },
                         singleLine = true,
                         colors = fieldColors
                     )
@@ -840,25 +837,25 @@ private fun TaskTimeEditDialog(
                             updateEndFromDuration()
                             validationError = null
                         },
-                        label = { Text("Минуты (0–59)") },
+                        label = { Text(AppText.get("Минуты (0–59)")) },
                         singleLine = true,
                         colors = fieldColors
                     )
                 }
 
                 Text(
-                    "Нажми на поле начала или окончания, чтобы выбрать время. Длительность можно вводить в часах и минутах.",
-                    color = Color.White.copy(alpha = 0.75f),
+                    AppText.get("Нажми на поле начала или окончания, чтобы выбрать время. Длительность можно вводить в часах и минутах."),
+                    color = AppColors.MainText.copy(alpha = 0.75f),
                     fontSize = 11.sp
                 )
                 validationError?.let { Text(it, color = AppColors.Red, fontSize = 12.sp) }
             }
         },
         confirmButton = {
-            TextButton(onClick = ::save) { Text("Сохранить", color = AppColors.Accent) }
+            TextButton(onClick = ::save) { Text(AppText.get("Сохранить"), color = AppColors.Accent) }
         },
         dismissButton = {
-            TextButton(onClick = dismiss) { Text("Отмена", color = AppColors.SecondaryText) }
+            TextButton(onClick = dismiss) { Text(AppText.get("Отмена"), color = AppColors.SecondaryText) }
         }
     )
 }
@@ -917,7 +914,7 @@ private fun ScheduleTimeline(
             }
             tasks.forEach { scheduled ->
                 add(TimelineBlock(
-                    id = "task_${scheduled.task.id}_${scheduled.date}",
+                    id = "task_${scheduled.task.id}_${scheduled.sessionId}_${scheduled.date}",
                     startMinute = scheduled.startMinute,
                     durationMinutes = scheduled.durationMinutes,
                     task = scheduled
@@ -987,13 +984,13 @@ private fun ScheduleTimeline(
                     key(block.id) {
                         CalendarTimelineCard(
                             itemKey = block.id,
-                            title = block.event?.event?.title ?: block.task!!.task.title,
+                            title = block.event?.event?.title ?: block.task!!.displayTitle,
                             range = TimelineRange(block.startMinute, block.durationMinutes),
                             laneWidth = laneWidth,
                             lane = block.lane,
                             color = block.task?.let { taskPriorityColor(it.priority).copy(alpha = 0.20f) }
                                 ?: AppColors.Card,
-                            editable = block.event?.event?.id?.let { it > 0 } ?: true,
+                            editable = block.event?.event?.id?.let { it > 0 } ?: (block.task?.accounted != true),
                             onClick = { displayedRange ->
                                 block.event?.let {
                                     onEventClick(it.withSegmentRange(displayedRange))
@@ -1029,7 +1026,7 @@ private fun WeekTasksContent(
         modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Задачи на неделю", color = AppColors.SecondaryText, fontSize = 13.sp)
+        Text(AppText.get("Задачи на неделю"), color = AppColors.SecondaryText, fontSize = 13.sp)
         dates.forEach { date ->
             val dayTasks = tasks.filter { it.date == date }.sortedBy { it.startMinute }
             val shift = shifts.find { it.date == date }
@@ -1046,13 +1043,13 @@ private fun WeekTasksContent(
                         color = AppColors.MainText,
                         fontWeight = FontWeight.Bold
                     )
-                    shift?.let { Text(shiftStatus(it.status) + if (it.predicted) " · предположение ?" else "", color = shiftColor(it.status), fontSize = 12.sp) }
+                    shift?.let { Text(shiftStatus(it.status) + if (it.predicted) AppText.get(" · предположение ?") else "", color = shiftColor(it.status), fontSize = 12.sp) }
                     ShiftRules.specialDatesFor(date, specialDates).forEach { Text("★ ${it.title}", color = AppColors.Yellow, fontSize = 12.sp) }
                     paymentBlocks.filter { it.date == date }.forEach { payment ->
                         TextButton(onClick = { onPaymentClick(payment) }) { Text(payment.event.title, color = AppColors.Accent) }
                     }
                     if (dayTasks.isEmpty()) {
-                        Text("Нет запланированных задач", color = AppColors.SecondaryText, fontSize = 12.sp)
+                        Text(AppText.get("Нет запланированных задач"), color = AppColors.SecondaryText, fontSize = 12.sp)
                     } else {
                         dayTasks.forEach { scheduled ->
                             Row(
@@ -1066,11 +1063,11 @@ private fun WeekTasksContent(
                                     fontSize = 12.sp
                                 )
                                 Column {
-                                    Text(scheduled.task.title, color = AppColors.MainText, fontWeight = FontWeight.SemiBold)
-                                    Text("${when (TaskRules.urgency(scheduled.task)) { 3 -> "Просрочена · "; 2 -> "Горит срок · "; else -> "" }}${TaskRules.priorityLabel(scheduled.task.priorityLevel)} приоритет", color = taskPriorityColor(scheduled.priority), fontSize = 11.sp)
+                                    Text(scheduled.displayTitle, color = AppColors.MainText, fontWeight = FontWeight.SemiBold)
+                                    Text(AppText.get("{arg0}{arg1} приоритет", when (TaskRules.urgency(scheduled.task)) { 3 -> AppText.get("Просрочена · "); 2 -> AppText.get("Горит срок · "); else -> "" }, TaskRules.priorityLabel(scheduled.task.priorityLevel)), color = taskPriorityColor(scheduled.priority), fontSize = 11.sp)
                                     if (scheduled.task.deadline.isNotBlank()) {
                                         Text(
-                                            text = "Дедлайн: ${CalendarDateUtils.formatDate(scheduled.task.deadline)}",
+                                            text = AppText.get("Дедлайн: {arg0}", CalendarDateUtils.formatDate(scheduled.task.deadline)),
                                             color = AppColors.SecondaryText,
                                             fontSize = 11.sp
                                         )
@@ -1103,17 +1100,8 @@ private fun MonthEventsContent(
 ) {
     val gridDates = remember(anchorDate) { CalendarDateUtils.monthGridDates(anchorDate) }
     val eventsByDate = occurrences.groupBy { it.date }
-    val scheduledById = scheduledTasks.associateBy { it.task.id }
-    val placementById = placements.associateBy { it.taskId }
-    val tasksByDate = tasks.mapNotNull { task ->
-        val placement = placementById[task.id]
-        val date = scheduledById[task.id]?.date ?: when {
-            placement?.hidden == true -> null
-            placement != null -> placement.date
-            else -> task.startDate.takeIf { it.isNotBlank() }
-        }
-        date?.let { it to task }
-    }.groupBy({ it.first }, { it.second })
+    val tasksByDate = scheduledTasks.groupBy { it.date }
+        .mapValues { (_, blocks) -> blocks.distinctBy { it.task.id }.map { it.task } }
     val selectedEvents = eventsByDate[anchorDate].orEmpty()
     val selectedTasks = tasksByDate[anchorDate].orEmpty()
 
@@ -1122,7 +1110,7 @@ private fun MonthEventsContent(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach { day ->
+            listOf(AppText.get("Пн"), AppText.get("Вт"), AppText.get("Ср"), AppText.get("Чт"), AppText.get("Пт"), AppText.get("Сб"), AppText.get("Вс")).forEach { day ->
                 Text(day, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, color = AppColors.SecondaryText, fontSize = 11.sp)
             }
         }
@@ -1176,31 +1164,32 @@ private fun MonthEventsContent(
             }
         }
 
-        Text("Голубой — работа · красный — выходной · жёлтый — больничный · фиолетовый — отпуск · ? — предположение", color = AppColors.SecondaryText, fontSize = 11.sp)
+        Text(AppText.get("Голубой — работа · красный — выходной · жёлтый — больничный · фиолетовый — отпуск · ? — предположение"), color = AppColors.SecondaryText, fontSize = 11.sp)
         ShiftRules.specialDatesFor(anchorDate, specialDates).forEach { Text("★ ${it.title}", color = AppColors.Yellow) }
         Text(CalendarDateUtils.formatLongDate(anchorDate), color = AppColors.MainText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Text("Двойное нажатие добавляет запись", color = AppColors.SecondaryText, fontSize = 11.sp)
+        Text(AppText.get("Двойное нажатие добавляет запись"), color = AppColors.SecondaryText, fontSize = 11.sp)
         if (selectedTasks.isEmpty() && selectedEvents.isEmpty()) {
-            Text("На этот день записей нет.", color = AppColors.SecondaryText, fontSize = 13.sp)
+            Text(AppText.get("На этот день записей нет."), color = AppColors.SecondaryText, fontSize = 13.sp)
         }
         if (selectedTasks.isNotEmpty()) {
-            Text("Задачи", color = AppColors.SecondaryText, fontWeight = FontWeight.SemiBold)
+            Text(AppText.get("Задачи"), color = AppColors.SecondaryText, fontWeight = FontWeight.SemiBold)
             selectedTasks.forEach { task ->
-                val time = scheduledById[task.id]?.let { CalendarDisplay.interval(it.startMinute, it.durationMinutes) }
+                val blocks = scheduledTasks.filter { it.task.id == task.id && it.date == anchorDate }.sortedBy { it.startMinute }
+                val time = blocks.joinToString(" · ") { CalendarDisplay.interval(it.startMinute, it.durationMinutes) }
                 Text(
-                    (if (task.completed) "✓ " else "• ") + task.title + (time?.let { " · $it" } ?: ""),
+                    (if (task.completed) "✓ " else "• ") + (blocks.firstOrNull()?.displayTitle ?: task.title) + " · " + time,
                     color = AppColors.MainText
                 )
             }
         }
         if (selectedEvents.isNotEmpty()) {
-            Text("Мероприятия и смены", color = AppColors.SecondaryText, fontWeight = FontWeight.SemiBold)
+            Text(AppText.get("Мероприятия и смены"), color = AppColors.SecondaryText, fontWeight = FontWeight.SemiBold)
             selectedEvents.forEach { occurrence ->
                 EventListCard(occurrence = occurrence, categoryName = categories.find { it.id == occurrence.event.categoryId }?.name, onClick = { onEventClick(occurrence) })
             }
         }
         TextButton(onClick = { onAddEvent(anchorDate, 9 * 60) }) {
-            Text("＋ Добавить запись на этот день", color = AppColors.Accent)
+            Text(AppText.get("＋ Добавить запись на этот день"), color = AppColors.Accent)
         }
     }
 }
@@ -1245,7 +1234,7 @@ private fun YearEventsContent(
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
-                    Text("$count мероприятий", color = AppColors.SecondaryText, fontSize = 11.sp)
+                    Text(AppText.get("{arg0} мероприятий", count), color = AppColors.SecondaryText, fontSize = 11.sp)
                 }
             }
         }
@@ -1266,7 +1255,7 @@ private fun EventListCard(
             Text(occurrence.event.title, color = AppColors.MainText, fontWeight = FontWeight.SemiBold)
             Text(
                 text = CalendarDisplay.interval(occurrence.instanceStartMinute, occurrence.instanceDurationMinutes) +
-                    if (occurrence.date != occurrence.instanceDate) " · продолжение с ${CalendarDateUtils.formatDate(occurrence.instanceDate)}" else "",
+                    if (occurrence.date != occurrence.instanceDate) AppText.get(" · продолжение с {arg0}", CalendarDateUtils.formatDate(occurrence.instanceDate)) else "",
                 color = AppColors.SecondaryText,
                 fontSize = 12.sp
             )

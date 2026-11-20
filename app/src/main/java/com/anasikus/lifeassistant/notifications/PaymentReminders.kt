@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.notifications
 
+import com.anasikus.lifeassistant.settings.AppText
 import android.Manifest
 import android.app.AlarmManager
 import android.app.Notification
@@ -77,7 +78,7 @@ object PaymentReminders {
                 if (deliver && at <= now) {
                     if (Build.VERSION.SDK_INT >= 26) {
                         manager.createNotificationChannel(
-                            NotificationChannel(channel, "Регулярные платежи", NotificationManager.IMPORTANCE_DEFAULT)
+                            NotificationChannel(channel, AppText.get("Регулярные платежи"), NotificationManager.IMPORTANCE_DEFAULT)
                         )
                     }
                     val openApp = PendingIntent.getActivity(

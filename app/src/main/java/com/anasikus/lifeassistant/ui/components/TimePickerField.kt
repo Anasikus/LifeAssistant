@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
 import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +42,7 @@ fun TimePickerField(
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text(label, color = AppColors.SecondaryText, fontSize = 12.sp)
-            Text("%02d:%02d".format(Math.floorMod(minute, 1440) / 60, Math.floorMod(minute, 1440) % 60) + if (minute >= 1440) " (+1 день)" else "", color = AppColors.MainText, fontSize = 18.sp)
+            Text("%02d:%02d".format(Math.floorMod(minute, 1440) / 60, Math.floorMod(minute, 1440) % 60) + if (minute >= 1440) AppText.get(" (+1 день)") else "", color = AppColors.MainText, fontSize = 18.sp)
         }
     }
 }

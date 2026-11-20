@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -48,8 +49,8 @@ private fun number(value: Double): String = NumberFormat.getNumberInstance(Local
 private fun axisMoney(cents: Long): String {
     val rubles = cents / 100.0
     return when {
-        rubles >= 1_000_000 -> number(rubles / 1_000_000) + " млн"
-        rubles >= 1_000 -> number(rubles / 1_000) + " тыс"
+        rubles >= 1_000_000 -> number(rubles / 1_000_000) + AppText.get(" млн")
+        rubles >= 1_000 -> number(rubles / 1_000) + AppText.get(" тыс")
         else -> number(rubles)
     }
 }
@@ -59,14 +60,14 @@ fun ExpenseDonutChart(categories: List<FinanceCategoryTotal>) {
     val total = categories.sumOf { it.amount }
     var selected by remember(categories) { mutableStateOf<Int?>(null) }
     if (total <= 0L) {
-        Text("За этот период расходов нет", color = AppColors.SecondaryText)
+        Text(AppText.get("За этот период расходов нет"), color = AppColors.SecondaryText)
         return
     }
     val current = selected?.let { categories.getOrNull(it) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.size(192.dp).align(Alignment.CenterHorizontally), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize().semantics {
-                contentDescription = "Расходы по категориям. Всего ${ShiftRules.money(total)}"
+                contentDescription = AppText.get("Расходы по категориям. Всего {arg0}", ShiftRules.money(total))
             }.pointerInput(categories) {
                 detectTapGestures { tap ->
                     val dx = tap.x - size.width / 2f
@@ -96,13 +97,13 @@ fun ExpenseDonutChart(categories: List<FinanceCategoryTotal>) {
                 }
             }
             Column(Modifier.width(128.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(current?.name ?: "Всего расходов", style = MaterialTheme.typography.labelMedium,
+                Text(current?.name ?: AppText.get("Всего расходов"), style = MaterialTheme.typography.labelMedium,
                     color = AppColors.SecondaryText, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(ShiftRules.money(current?.amount ?: total), style = MaterialTheme.typography.titleSmall,
                     color = AppColors.MainText, maxLines = 2)
             }
         }
-        Text("Нажми на сектор или категорию", style = MaterialTheme.typography.labelSmall, color = AppColors.SecondaryText)
+        Text(AppText.get("Нажми на сектор или категорию"), style = MaterialTheme.typography.labelSmall, color = AppColors.SecondaryText)
         categories.forEachIndexed { index, category ->
             val percent = category.amount.toDouble() / total * 100
             Row(Modifier.fillMaxWidth().clickable { selected = if (selected == index) null else index }.padding(vertical = 5.dp),
@@ -121,7 +122,7 @@ fun ExpenseDonutChart(categories: List<FinanceCategoryTotal>) {
 @Composable
 fun FinanceComparisonChart(points: List<FinanceChartPoint>, green: List<Long>, greenLabel: String) {
     if (points.size < 2 || green.size != points.size) {
-        Text("В выбранном периоде пока нет данных", color = AppColors.SecondaryText)
+        Text(AppText.get("В выбранном периоде пока нет данных"), color = AppColors.SecondaryText)
         return
     }
     var selected by remember(points, green) { mutableStateOf(points.lastIndex) }
@@ -130,7 +131,7 @@ fun FinanceComparisonChart(points: List<FinanceChartPoint>, green: List<Long>, g
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("━ $greenLabel", color = AppColors.Green, style = MaterialTheme.typography.labelMedium)
-            Text("┅ Потрачено", color = AppColors.Red, style = MaterialTheme.typography.labelMedium)
+            Text(AppText.get("┅ Потрачено"), color = AppColors.Red, style = MaterialTheme.typography.labelMedium)
         }
         Text("₽", color = AppColors.SecondaryText, style = MaterialTheme.typography.labelSmall)
         Row(Modifier.fillMaxWidth()) {
@@ -138,7 +139,7 @@ fun FinanceComparisonChart(points: List<FinanceChartPoint>, green: List<Long>, g
                 listOf(maximum, maximum / 2, 0L).forEach { Text(axisMoney(it), color = AppColors.SecondaryText, style = MaterialTheme.typography.labelSmall) }
             }
             Canvas(Modifier.weight(1f).height(180.dp).padding(vertical = 8.dp).semantics {
-                contentDescription = "$greenLabel: ${ShiftRules.money(green.last())}; потрачено: ${ShiftRules.money(points.last().expense)}"
+                contentDescription = AppText.get("{arg0}: {arg1}; потрачено: {arg2}", greenLabel, ShiftRules.money(green.last()), ShiftRules.money(points.last().expense))
             }.pointerInput(points, green) {
                 detectTapGestures { tap ->
                     selected = (tap.x / size.width.coerceAtLeast(1) * points.lastIndex).roundToInt().coerceIn(points.indices)
@@ -170,19 +171,19 @@ fun FinanceComparisonChart(points: List<FinanceChartPoint>, green: List<Long>, g
             }
         }
         Row(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Начало", style = MaterialTheme.typography.labelSmall, color = AppColors.SecondaryText)
+            Text(AppText.get("Начало"), style = MaterialTheme.typography.labelSmall, color = AppColors.SecondaryText)
             if (points.size > 2) Text(CalendarDateUtils.formatDate(points[points.size / 2].date).take(5), style = MaterialTheme.typography.labelSmall, color = AppColors.SecondaryText)
             Text(CalendarDateUtils.formatDate(points.last().date).take(5), style = MaterialTheme.typography.labelSmall, color = AppColors.SecondaryText)
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(enabled = selected > 0, onClick = { selected-- }, contentPadding = PaddingValues(4.dp)) { Text("‹") }
             Column(Modifier.weight(1f)) {
-                Text(if (selected == 0) "Начало периода" else CalendarDateUtils.formatDate(selectedPoint.date), style = MaterialTheme.typography.labelMedium)
+                Text(if (selected == 0) AppText.get("Начало периода") else CalendarDateUtils.formatDate(selectedPoint.date), style = MaterialTheme.typography.labelMedium)
                 Text("$greenLabel: ${ShiftRules.money(green[selected])}", color = AppColors.Green, style = MaterialTheme.typography.bodySmall)
-                Text("Потрачено: ${ShiftRules.money(selectedPoint.expense)}", color = AppColors.Red, style = MaterialTheme.typography.bodySmall)
+                Text(AppText.get("Потрачено: {arg0}", ShiftRules.money(selectedPoint.expense)), color = AppColors.Red, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(enabled = selected < points.lastIndex, onClick = { selected++ }, contentPadding = PaddingValues(4.dp)) { Text("›") }
         }
-        Text("Нажми на график или используй стрелки, чтобы посмотреть значения.", color = AppColors.SecondaryText, style = MaterialTheme.typography.labelSmall)
+        Text(AppText.get("Нажми на график или используй стрелки, чтобы посмотреть значения."), color = AppColors.SecondaryText, style = MaterialTheme.typography.labelSmall)
     }
 }

@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -133,7 +134,7 @@ fun CalendarTimelineCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${preview.durationMinutes / 60} ч ${preview.durationMinutes % 60} мин",
+                    text = AppText.get("{arg0} ч {arg1} мин", preview.durationMinutes / 60, preview.durationMinutes % 60),
                     color = AppColors.SecondaryText,
                     fontSize = 10.sp,
                     maxLines = 1

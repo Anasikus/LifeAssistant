@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -30,20 +31,20 @@ fun TaskStatisticsDialog(tasks: List<TaskEntity>, today: String, onDismiss: () -
     val count = days.sumOf { it.completed }
     val best = days.filter { it.completed > 0 }.maxWithOrNull(compareBy({ it.completed }, { it.date }))
     val point = days.getOrNull(selected)
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Продуктивность") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(AppText.get("Продуктивность")) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(period == 7, onClick = { period = 7 }, label = { Text("7 дней") })
-                FilterChip(period == 30, onClick = { period = 30 }, label = { Text("30 дней") })
+                FilterChip(period == 7, onClick = { period = 7 }, label = { Text(AppText.get("7 дней")) })
+                FilterChip(period == 30, onClick = { period = 30 }, label = { Text(AppText.get("30 дней")) })
             }
             Text("${CalendarDateUtils.formatDate(start)} — ${CalendarDateUtils.formatDate(today)}", color = AppColors.SecondaryText)
-            Text("Выполнено: $count", style = MaterialTheme.typography.titleMedium)
-            Text("С опозданием: ${days.sumOf { it.late }}", color = AppColors.SecondaryText)
-            if (best == null) Text("Выполненных задач за этот период пока нет.")
-            else Text("Больше всего выполнено ${CalendarDateUtils.formatDate(best.date)}: ${best.completed}.")
-            Text("Количество выполненных задач по дням", style = MaterialTheme.typography.labelMedium)
+            Text(AppText.get("Выполнено: {arg0}", count), style = MaterialTheme.typography.titleMedium)
+            Text(AppText.get("С опозданием: {arg0}", days.sumOf { it.late }), color = AppColors.SecondaryText)
+            if (best == null) Text(AppText.get("Выполненных задач за этот период пока нет."))
+            else Text(AppText.get("Больше всего выполнено {arg0}: {arg1}.", CalendarDateUtils.formatDate(best.date), best.completed))
+            Text(AppText.get("Количество выполненных задач по дням"), style = MaterialTheme.typography.labelMedium)
             Canvas(Modifier.fillMaxWidth().height(150.dp).semantics {
-                contentDescription = "Завершено $count задач за $period дней"
+                contentDescription = AppText.get("Завершено {arg0} задач за {arg1} дней", count, period)
             }.pointerInput(days) {
                 detectTapGestures { tap ->
                     selected = floor(tap.x / size.width.coerceAtLeast(1) * days.size).toInt().coerceIn(days.indices)
@@ -65,15 +66,15 @@ fun TaskStatisticsDialog(tasks: List<TaskEntity>, today: String, onDismiss: () -
             }
             point?.let {
                 Text(CalendarDateUtils.formatDate(it.date), style = MaterialTheme.typography.titleSmall)
-                Text("Выполнено: ${it.completed} · С опозданием: ${it.late}")
-                Text("Оценка времени этих задач: ${TaskRules.durationLabel(it.estimatedMinutes)}")
+                Text(AppText.get("Выполнено: {arg0} · С опозданием: {arg1}", it.completed, it.late))
+                Text(AppText.get("Оценка времени этих задач: {arg0}", TaskRules.durationLabel(it.estimatedMinutes)))
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    TextButton(enabled = selected > 0, onClick = { selected-- }) { Text("‹ День") }
-                    TextButton(enabled = selected < days.lastIndex, onClick = { selected++ }) { Text("День ›") }
+                    TextButton(enabled = selected > 0, onClick = { selected-- }) { Text(AppText.get("‹ День")) }
+                    TextButton(enabled = selected < days.lastIndex, onClick = { selected++ }) { Text(AppText.get("День ›")) }
                 }
             }
-            Text("Нажми на столбец или выбери день стрелками. В статистику входят и архивные задачи. Время — оценка из задачи, а не фактический таймер.",
+            Text(AppText.get("Нажми на столбец или выбери день стрелками. В статистику входят и архивные задачи. Время — оценка из задачи, а не фактический таймер."),
                 style = MaterialTheme.typography.bodySmall, color = AppColors.SecondaryText)
         }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } })
+    }, confirmButton = { TextButton(onClick = onDismiss) { Text(AppText.get("Закрыть")) } })
 }

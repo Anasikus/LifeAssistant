@@ -1,5 +1,7 @@
 package com.anasikus.lifeassistant.notifications
 
+import com.anasikus.lifeassistant.settings.AppText
+
 import android.app.Notification
 import androidx.core.app.NotificationCompat
 import com.anasikus.lifeassistant.domain.FinanceMessageParser
@@ -33,7 +35,7 @@ object FinanceNotificationReader {
         val sender = if (mail && title.isNotBlank() && FinanceMessageParser.parse(title).amounts.isEmpty())
             "$packageName · $title" else packageName
         return Payload(if (mail) "EMAIL" else "NOTIFICATION", sender,
-            title.ifBlank { if (body.isBlank()) "Уведомление без доступного текста" else "" }, body)
+            title.ifBlank { if (body.isBlank()) AppText.get("Уведомление без доступного текста") else "" }, body)
     }
 
     fun eventKey(notificationKey: String, postedAt: Long, title: String, body: String): String =

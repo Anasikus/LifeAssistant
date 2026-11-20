@@ -17,7 +17,7 @@ class UnsavedTaskFormTest {
         var saved: String? = null
         compose.setContent { MaterialTheme {
             if (open) TaskEditorDialog(null, onDismiss = { open = false },
-                onSave = { title, _, _, _, _, _ -> saved = title; open = false })
+                onSave = { title, _, _, _, _, _, _, _ -> saved = title; open = false })
         } }
         compose.onNodeWithText("Название").performTextInput("Сайт смен")
         compose.onNodeWithText("Отмена").performClick()
@@ -34,7 +34,7 @@ class UnsavedTaskFormTest {
         var open by mutableStateOf(true)
         var saved = false
         compose.setContent { MaterialTheme {
-            if (open) TaskEditorDialog(null, onDismiss = { open = false }, onSave = { _, _, _, _, _, _ -> saved = true })
+            if (open) TaskEditorDialog(null, onDismiss = { open = false }, onSave = { _, _, _, _, _, _, _, _ -> saved = true })
         } }
         compose.onNodeWithText("Описание").performTextInput("Идея без названия")
         compose.onNodeWithText("Отмена").performClick()

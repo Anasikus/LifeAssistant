@@ -17,7 +17,7 @@ fun BottomNavigationBar(
         containerColor = AppColors.Card,
         contentColor = AppColors.MainText
     ) {
-        AppDestination.values().forEach { destination ->
+        com.anasikus.lifeassistant.settings.AppPreferences.order.map { AppDestination.valueOf(it) }.forEach { destination ->
             NavigationBarItem(
                 selected = selectedDestination == destination,
                 onClick = {

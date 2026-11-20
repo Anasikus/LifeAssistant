@@ -203,7 +203,7 @@ interface FinanceInboxDao {
         }
         val existing = transactionForMessage(id)
         val category = categoryId?.takeIf { categoryExists(it) == 1 }
-        val incomeCategoryId = if (isIncome && sourceKey?.startsWith("income:") == true && !sourceName.isNullOrBlank()) {
+        val incomeCategoryId = if (isIncome && sourceKey != null && !sourceName.isNullOrBlank()) {
             incomeCategoryByName(sourceName) ?: run {
                 insertIncomeCategory(IncomeCategoryEntity(name = sourceName))
                 incomeCategoryByName(sourceName)

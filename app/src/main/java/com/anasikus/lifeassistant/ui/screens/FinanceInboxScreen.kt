@@ -1,5 +1,7 @@
 package com.anasikus.lifeassistant.ui.screens
 
+import com.anasikus.lifeassistant.settings.AppText
+import com.anasikus.lifeassistant.ui.assistantColorScheme
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -76,24 +78,24 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
     var showRules by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
-    MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
+    MaterialTheme(colorScheme = assistantColorScheme(primary = AppColors.Accent, surface = AppColors.Card)) {
         LazyColumn(
             modifier.background(AppColors.Background), state = listState, contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                TextButton(onClick = onBack) { Text("‹ Финансы") }
-                Text("Уведомления", style = MaterialTheme.typography.headlineSmall)
+                TextButton(onClick = onBack) { Text(AppText.get("‹ Финансы")) }
+                Text(AppText.get("Уведомления"), style = MaterialTheme.typography.headlineSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    TextButton(onClick = { showAccess = true }) { Text("Источники") }
-                    TextButton(onClick = { showSenders = true }) { Text("Отправители") }
-                    TextButton(onClick = { showRules = true }) { Text("Правила") }
-                    TextButton(onClick = { showImport = true }) { Text("Вставить текст") }
+                    TextButton(onClick = { showAccess = true }) { Text(AppText.get("Источники")) }
+                    TextButton(onClick = { showSenders = true }) { Text(AppText.get("Отправители")) }
+                    TextButton(onClick = { showRules = true }) { Text(AppText.get("Правила")) }
+                    TextButton(onClick = { showImport = true }) { Text(AppText.get("Вставить текст")) }
                 }
-                TextButton(onClick = { showCategories = true }) { Text("Категории расходов") }
+                TextButton(onClick = { showCategories = true }) { Text(AppText.get("Категории расходов")) }
                 error?.let { Text(it, color = AppColors.Red) }
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    listOf("PENDING" to "В обработке", "POSTED" to "Учтено", "SAVED" to "Сохранено", "IGNORED" to "Не нужно").forEach { (status, label) ->
+                    listOf("PENDING" to AppText.get("В обработке"), "POSTED" to AppText.get("Учтено"), "SAVED" to AppText.get("Сохранено"), "IGNORED" to AppText.get("Не нужно")).forEach { (status, label) ->
                         TextButton(onClick = { filter = status }) {
                             Text("$label (${counts[status] ?: 0})", color = if (status == filter) AppColors.Accent else AppColors.SecondaryText)
                         }
@@ -102,10 +104,10 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
             }
             if (shown.isEmpty()) item {
                 Text(when (filter) {
-                    "POSTED" -> "Здесь появятся подтверждённые уведомления с операциями."
-                    "SAVED" -> "Здесь появятся сообщения, сохранённые без операции в финансах."
-                    "IGNORED" -> "Здесь останутся отмеченные ненужными сообщения; их похожие копии удаляются."
-                    else -> "Новых сообщений для проверки пока нет."
+                    "POSTED" -> AppText.get("Здесь появятся подтверждённые уведомления с операциями.")
+                    "SAVED" -> AppText.get("Здесь появятся сообщения, сохранённые без операции в финансах.")
+                    "IGNORED" -> AppText.get("Здесь останутся отмеченные ненужными сообщения; их похожие копии удаляются.")
+                    else -> AppText.get("Новых сообщений для проверки пока нет.")
                 }, color = AppColors.SecondaryText)
             }
             items(shown, key = { it.id }) { message ->
@@ -116,23 +118,23 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
                         val senderRule = ruleMap[FinanceMessageParser.senderKey(scope.first, scope.second)]
                             ?: ruleMap[FinanceMessageParser.senderKey(message.source, message.sender)]
                         if (senderRule != null) Text(
-                            (senderRule.bankName?.let { "$it · " }.orEmpty()) + if (senderRule.action == "FINANCIAL") "Финансовый отправитель" else "Сбор отключён",
+                            (senderRule.bankName?.let { "$it · " }.orEmpty()) + if (senderRule.action == "FINANCIAL") AppText.get("Финансовый отправитель") else AppText.get("Сбор отключён"),
                             color = AppColors.SecondaryText
                         )
-                        TextButton(onClick = { senderSettings = senderScope(message.source, message.sender) }) { Text("Настроить отправителя") }
-                        Text(message.title.ifBlank { "Сообщение" }, color = AppColors.MainText)
+                        TextButton(onClick = { senderSettings = senderScope(message.source, message.sender) }) { Text(AppText.get("Настроить отправителя")) }
+                        Text(message.title.ifBlank { AppText.get("Сообщение") }, color = AppColors.MainText)
                         Text(message.body, maxLines = 5, color = AppColors.SecondaryText)
                         Text(CalendarDateUtils.formatDate(FinanceMessageParser.date(message.receivedAt)), color = AppColors.SecondaryText)
                         message.proposedAmountCents?.let { amount ->
-                            val direction = if (message.proposedTransfer) "Перевод" else when (message.proposedIncome) { true -> "Доход"; false -> "Расход"; null -> "Уточни тип операции" }
+                            val direction = if (message.proposedTransfer) AppText.get("Перевод") else when (message.proposedIncome) { true -> AppText.get("Доход"); false -> AppText.get("Расход"); null -> AppText.get("Уточни тип операции") }
                             Text("$direction · ${ShiftRules.money(amount)}", color = AppColors.MainText)
                         }
-                        if (message.automatic) Text("Добавлено по твоему правилу", color = AppColors.Green)
-                        if (message.possibleDuplicate) Text("Есть похожая операция за последние две минуты. Проверь, не повторяется ли сообщение.", color = AppColors.Yellow)
+                        if (message.automatic) Text(AppText.get("Добавлено по твоему правилу"), color = AppColors.Green)
+                        if (message.possibleDuplicate) Text(AppText.get("Есть похожая операция за последние две минуты. Проверь, не повторяется ли сообщение."), color = AppColors.Yellow)
                         Row {
-                            TextButton(onClick = { selected = message }) { Text(if (message.status == "POSTED") "Изменить" else "Проверить") }
-                            TextButton(onClick = { ignoring = message }) { Text("Не нужно") }
-                            TextButton(onClick = { deleting = message }) { Text("Удалить") }
+                            TextButton(onClick = { selected = message }) { Text(if (message.status == "POSTED") AppText.get("Изменить") else AppText.get("Проверить")) }
+                            TextButton(onClick = { ignoring = message }) { Text(AppText.get("Не нужно")) }
+                            TextButton(onClick = { deleting = message }) { Text(AppText.get("Удалить")) }
                         }
                     }
                 }
@@ -147,28 +149,28 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
         }
         ignoring?.let { message ->
             AlertDialog(
-                onDismissRequest = { ignoring = null }, title = { Text("Считать сообщение ненужным?") },
+                onDismissRequest = { ignoring = null }, title = { Text(AppText.get("Считать сообщение ненужным?")) },
                 text = { Column {
-                    Text("Выбранное сообщение останется в «Не нужно». «Удалить похожие» очистит остальные неучтённые сообщения этого шаблона от того же отправителя и отключит их дальнейший сбор. Другие учтённые операции сохранятся. Операция выбранного сообщения, если она есть, будет удалена.")
+                    Text(AppText.get("Выбранное сообщение останется в «Не нужно». «Удалить похожие» очистит остальные неучтённые сообщения этого шаблона от того же отправителя и отключит их дальнейший сбор. Другие учтённые операции сохранятся. Операция выбранного сообщения, если она есть, будет удалена."))
                     error?.let { Text(it, color = AppColors.Red) }
                 } },
-                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true) { ignoring = null } }) { Text("Удалить похожие") } },
+                confirmButton = { TextButton(onClick = { viewModel.ignoreInbox(message.id, true) { ignoring = null } }) { Text(AppText.get("Удалить похожие")) } },
                 dismissButton = {
                     Row {
-                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false) { ignoring = null } }) { Text("Только это") }
-                        TextButton(onClick = { ignoring = null }) { Text("Отмена") }
+                        TextButton(onClick = { viewModel.ignoreInbox(message.id, false) { ignoring = null } }) { Text(AppText.get("Только это")) }
+                        TextButton(onClick = { ignoring = null }) { Text(AppText.get("Отмена")) }
                     }
                 }
             )
         }
         deleting?.let { message ->
             AlertDialog(
-                onDismissRequest = { deleting = null }, title = { Text("Удалить сообщение и его операцию?") },
+                onDismissRequest = { deleting = null }, title = { Text(AppText.get("Удалить сообщение и его операцию?")) },
                 text = { Text(if (rules.find { it.key == message.ruleKey }?.action in listOf("IGNORE", "KEEP"))
-                    "Текст удалится. Запомненное правило сохранится; изменить его можно во вкладке «Правила»."
-                    else "Текст и связанная операция удалятся. Следующее похожее сообщение придёт на проверку.") },
-                confirmButton = { TextButton(onClick = { viewModel.deleteInbox(message.id); deleting = null }) { Text("Удалить") } },
-                dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } }
+                    AppText.get("Текст удалится. Запомненное правило сохранится; изменить его можно во вкладке «Правила».")
+                    else AppText.get("Текст и связанная операция удалятся. Следующее похожее сообщение придёт на проверку.")) },
+                confirmButton = { TextButton(onClick = { viewModel.deleteInbox(message.id); deleting = null }) { Text(AppText.get("Удалить")) } },
+                dismissButton = { TextButton(onClick = { deleting = null }) { Text(AppText.get("Отмена")) } }
             )
         }
         if (showAccess) CaptureAccessDialog { showAccess = false }
@@ -235,71 +237,71 @@ private fun ReviewMessageDialog(
     val dismiss = rememberDismissGuard(draft != initial, ::save, onDismiss)
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text(if (step == 0) "Проверка операции" else "Категория и обучение") },
+        title = { Text(if (step == 0) AppText.get("Проверка операции") else AppText.get("Категория и обучение")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (step == 0) {
-                    OutlinedTextField(title, { title = it }, label = { Text("Заголовок") }, singleLine = true)
-                    OutlinedTextField(body, { body = it }, label = { Text("Текст сообщения") }, minLines = 2, maxLines = 6)
+                    OutlinedTextField(title, { title = it }, label = { Text(AppText.get("Заголовок")) }, singleLine = true)
+                    OutlinedTextField(body, { body = it }, label = { Text(AppText.get("Текст сообщения")) }, minLines = 2, maxLines = 6)
                     TextButton(onClick = {
                         val parsed = FinanceMessageParser.message(title, body, message.source)
                         income = parsed.income
                         transfer = parsed.transfer
                         amount = parsed.preferredAmount?.let { java.math.BigDecimal.valueOf(it, 2).toPlainString() }.orEmpty()
-                    }) { Text("Разобрать текст заново") }
+                    }) { Text(AppText.get("Разобрать текст заново")) }
                     FinanceDirectionButtons(income, transfer) { nextIncome, nextTransfer -> income = nextIncome; transfer = nextTransfer }
-                    OutlinedTextField(amount, { amount = it }, label = { Text("Сумма, ₽") }, singleLine = true)
-                    PlanningDateField("Дата операции", date) { date = it }
-                    if (message.possibleDuplicate) Text("Проверь похожую операцию в истории перед подтверждением.", color = AppColors.Yellow)
-                    TextButton(onClick = { onKeep(title, body) }) { Text("Сохранить без операции в финансах") }
-                    if (message.body.contains("перевод", ignoreCase = true)) Text("Тип «Перевод» сохраняет операцию в истории, но не меняет доход, расход и остаток.", color = AppColors.SecondaryText)
-                    if (message.source == "EMAIL" && cents == null) Text("В заголовке нет суммы. Для Ozon пока введи итог из чека вручную.", color = AppColors.Yellow)
-                    Text("Автоматическая дата — день получения сообщения. Проверь направление и сумму. Если валюта другая, введи сумму в рублях вручную.", color = AppColors.SecondaryText)
+                    OutlinedTextField(amount, { amount = it }, label = { Text(AppText.get("Сумма, ₽")) }, singleLine = true)
+                    PlanningDateField(AppText.get("Дата операции"), date) { date = it }
+                    if (message.possibleDuplicate) Text(AppText.get("Проверь похожую операцию в истории перед подтверждением."), color = AppColors.Yellow)
+                    TextButton(onClick = { onKeep(title, body) }) { Text(AppText.get("Сохранить без операции в финансах")) }
+                    if (message.body.contains("перевод", ignoreCase = true)) Text(AppText.get("Тип «Перевод» сохраняет операцию в истории, но не меняет доход, расход и остаток."), color = AppColors.SecondaryText)
+                    if (message.source == "EMAIL" && cents == null) Text(AppText.get("В заголовке нет суммы. Для Ozon пока введи итог из чека вручную."), color = AppColors.Yellow)
+                    Text(AppText.get("Автоматическая дата — день получения сообщения. Проверь направление и сумму. Если валюта другая, введи сумму в рублях вручную."), color = AppColors.SecondaryText)
                 } else {
-                    Text("${if (transfer) "Перевод" else if (income == true) "Доход" else "Расход"} · ${ShiftRules.money(cents ?: 0)}")
-                    if (transfer) Text("Не учитывается в доходах, расходах, остатке и выплатах по работам.")
+                    Text("${if (transfer) AppText.get("Перевод") else if (income == true) AppText.get("Доход") else AppText.get("Расход")} · ${ShiftRules.money(cents ?: 0)}")
+                    if (transfer) Text(AppText.get("Не учитывается в доходах, расходах, остатке и выплатах по работам."))
                     if (!transfer && income == false) ExpenseCategoryPicker(categories, category) { category = it }
                     else if (!transfer) {
                         Box {
-                            OutlinedButton(onClick = { sourceMenu = true }) { Text(source?.name ?: "Прочий доход") }
+                            OutlinedButton(onClick = { sourceMenu = true }) { Text(source?.name ?: AppText.get("Прочий доход")) }
                             DropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
-                                DropdownMenuItem(text = { Text("Прочий доход") }, onClick = { source = null; customIncome = ""; sourceMenu = false })
+                                DropdownMenuItem(text = { Text(AppText.get("Прочий доход")) }, onClick = { source = null; customIncome = ""; sourceMenu = false })
                                 sources.forEach { item -> DropdownMenuItem(text = { Text(item.name) }, onClick = { source = item; customIncome = ""; sourceMenu = false }) }
                             }
                         }
                     }
-                    if (!transfer && income == true && incomeCategories.isNotEmpty()) ChoiceField("Категория дохода", customIncome.ifBlank { "Выбрать категорию" },
-                        listOf("" to "Без категории") + incomeCategories.map { it.name to it.name }) {
+                    if (!transfer && income == true && incomeCategories.isNotEmpty()) ChoiceField(AppText.get("Категория дохода"), customIncome.ifBlank { AppText.get("Выбрать категорию") },
+                        listOf("" to AppText.get("Без категории")) + incomeCategories.map { it.name to it.name }) {
                         customIncome = it; source = null
                     }
                     if (!transfer && income == true) OutlinedTextField(customIncome, {
                         customIncome = it
                         if (it.isNotBlank()) source = null
-                    }, label = { Text("Своя категория дохода (необязательно)") }, singleLine = true)
-                    OutlinedTextField(textFilter, { textFilter = it }, label = { Text("Текст для правила (необязательно)") },
-                        supportingText = { Text("Например: из Т-Банка и на новой строке от Иванова. Все строки должны встречаться в сообщении. Для магазина достаточно АГРОТОРГ. Учитывается тот же тип операции.") },
+                    }, label = { Text(AppText.get("Своя категория дохода (необязательно)")) }, singleLine = true)
+                    OutlinedTextField(textFilter, { textFilter = it }, label = { Text(AppText.get("Текст для правила (необязательно)")) },
+                        supportingText = { Text(AppText.get("Например: из Т-Банка и на новой строке от Иванова. Все строки должны встречаться в сообщении. Для магазина достаточно АГРОТОРГ. Учитывается тот же тип операции.")) },
                         isError = !filterValid)
-                    if (!filterValid) Text("Этот текст должен присутствовать в текущем сообщении.", color = AppColors.Red)
+                    if (!filterValid) Text(AppText.get("Этот текст должен присутствовать в текущем сообщении."), color = AppColors.Red)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(learn, onCheckedChange = { learn = it })
-                        Text("Запомнить для похожих сообщений")
+                        Text(AppText.get("Запомнить для похожих сообщений"))
                     }
                     val matchingAmounts = FinanceMessageParser.message(title, body, message.source).amounts.count { !it.balance && it.cents == cents }
                     if (learn && matchingAmounts != 1) {
-                        Text("Сумма не выделяется однозначно. Похожие сообщения будут приходить на проверку.", color = AppColors.Yellow)
+                        Text(AppText.get("Сумма не выделяется однозначно. Похожие сообщения будут приходить на проверку."), color = AppColors.Yellow)
                     }
-                    Text("Похожий источник и шаблон будут получать выбранные тип и категорию. Если сумму нельзя однозначно прочитать, сообщение снова придёт на проверку.", color = AppColors.SecondaryText)
+                    Text(AppText.get("Похожий источник и шаблон будут получать выбранные тип и категорию. Если сумму нельзя однозначно прочитать, сообщение снова придёт на проверку."), color = AppColors.SecondaryText)
                 }
-                if (validation) Text("Проверь направление, сумму, дату и текст правила.", color = AppColors.Red)
+                if (validation) Text(AppText.get("Проверь направление, сумму, дату и текст правила."), color = AppColors.Red)
                 error?.let { Text(it, color = AppColors.Red) }
             }
         },
         confirmButton = {
             TextButton(enabled = (income != null || transfer) && cents != null && cents > 0 && date <= CalendarDateUtils.today() && filterValid, onClick = {
                 if (step == 0) step = 1 else save()
-            }) { Text(if (step == 0) "Да, всё верно" else "Сохранить") }
+            }) { Text(if (step == 0) AppText.get("Да, всё верно") else AppText.get("Сохранить")) }
         },
-        dismissButton = { TextButton(onClick = { if (step > 0) step = 0 else dismiss() }) { Text(if (step > 0) "Назад" else "Отмена") } }
+        dismissButton = { TextButton(onClick = { if (step > 0) step = 0 else dismiss() }) { Text(if (step > 0) AppText.get("Назад") else AppText.get("Отмена")) } }
     )
 }
 
@@ -335,32 +337,32 @@ private fun CaptureAccessDialog(onDismiss: () -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Источники сообщений") },
+        title = { Text(AppText.get("Источники сообщений")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                CaptureToggle("Новые SMS", sms && smsPermission) { enabled ->
+                CaptureToggle(AppText.get("Новые SMS"), sms && smsPermission) { enabled ->
                     if (enabled && !smsPermission) permission.launch(Manifest.permission.RECEIVE_SMS)
                     else { sms = enabled; FinanceCaptureSettings.setEnabled(context, "SMS", enabled) }
                 }
-                if (!smsPermission) Text("Если Android не разрешает SMS, сообщения можно получать через уведомления SMS-приложения или вставлять вручную.")
-                CaptureToggle("Почта через уведомления", email) { email = it; FinanceCaptureSettings.setEnabled(context, "EMAIL", it) }
-                CaptureToggle("Пуш-уведомления приложений", notifications) { notifications = it; FinanceCaptureSettings.setEnabled(context, "NOTIFICATION", it) }
-                Text("Яндекс Пэй, банки и другие приложения. Новые сообщения попадают на проверку; ненужных отправителей можно отключить, а для операций — задать правила.")
-                Text(if (notificationAccess) "Доступ к уведомлениям разрешён" else "Требуется доступ к уведомлениям в Android")
-                OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Настройки доступа Android") }
-                Text(if (connected) "Последнее состояние обработчика: подключён" else "Последнее состояние обработчика: отключён")
-                OutlinedButton(enabled = notificationAccess, onClick = { FinanceCaptureSettings.reconnect(context) }) { Text("Переподключить обработчик") }
-                Text("Последний проверенный пуш:")
+                if (!smsPermission) Text(AppText.get("Если Android не разрешает SMS, сообщения можно получать через уведомления SMS-приложения или вставлять вручную."))
+                CaptureToggle(AppText.get("Почта через уведомления"), email) { email = it; FinanceCaptureSettings.setEnabled(context, "EMAIL", it) }
+                CaptureToggle(AppText.get("Пуш-уведомления приложений"), notifications) { notifications = it; FinanceCaptureSettings.setEnabled(context, "NOTIFICATION", it) }
+                Text(AppText.get("Яндекс Пэй, банки и другие приложения. Новые сообщения попадают на проверку; ненужных отправителей можно отключить, а для операций — задать правила."))
+                Text(if (notificationAccess) AppText.get("Доступ к уведомлениям разрешён") else AppText.get("Требуется доступ к уведомлениям в Android"))
+                OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text(AppText.get("Настройки доступа Android")) }
+                Text(if (connected) AppText.get("Последнее состояние обработчика: подключён") else AppText.get("Последнее состояние обработчика: отключён"))
+                OutlinedButton(enabled = notificationAccess, onClick = { FinanceCaptureSettings.reconnect(context) }) { Text(AppText.get("Переподключить обработчик")) }
+                Text(AppText.get("Последний проверенный пуш:"))
                 Text(remember(healthRevision) { FinanceCaptureSettings.pushDetails(context) }, color = AppColors.SecondaryText)
-                listOf("SMS" to "SMS", "NOTIFICATION" to "Пуши", "EMAIL" to "Почта").forEach { (key, label) ->
+                listOf("SMS" to "SMS", "NOTIFICATION" to AppText.get("Пуши"), "EMAIL" to AppText.get("Почта")).forEach { (key, label) ->
                     val last = FinanceCaptureSettings.lastProcessed(context, key)
-                    Text("$label: " + if (last > 0) "последняя обработка " + java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(last)) else "ещё не обрабатывались")
-                    FinanceCaptureSettings.lastError(context, key)?.let { Text("$label: ошибка сохранения ($it)", color = AppColors.Red) }
+                    Text("$label: " + if (last > 0) AppText.get("последняя обработка ") + java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(last)) else AppText.get("ещё не обрабатывались"))
+                    FinanceCaptureSettings.lastError(context, key)?.let { Text(AppText.get("{arg0}: ошибка сохранения ({arg1})", label, it), color = AppColors.Red) }
                 }
-                Text("Включи уведомления в почтовом клиенте. Импортируется видимый текст новых сообщений. Правила и разбор выполняются на телефоне.")
+                Text(AppText.get("Включи уведомления в почтовом клиенте. Импортируется видимый текст новых сообщений. Правила и разбор выполняются на телефоне."))
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Готово") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(AppText.get("Готово")) } }
     )
 }
 
@@ -376,27 +378,27 @@ private fun CaptureToggle(label: String, enabled: Boolean, onChange: (Boolean) -
 private fun ImportRulesDialog(rules: List<FinanceImportRuleEntity>, categories: List<ExpenseCategoryEntity>, onForget: (String) -> Unit, onSender: (String, String) -> Unit, onEdit: (FinanceImportRuleEntity) -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Запомненные правила") },
+        title = { Text(AppText.get("Запомненные правила")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (rules.isEmpty()) Text("Подтверди или отклони первое сообщение, чтобы создать правило.")
+                if (rules.isEmpty()) Text(AppText.get("Подтверди или отклони первое сообщение, чтобы создать правило."))
                 rules.forEach { rule ->
                     Text("${sourceLabel(rule.source)} · ${rule.sender}")
-                    Text(when (rule.action) { "IGNORE" -> "Пропускать"; "AUTO" -> "Учитывать автоматически"; "KEEP" -> "Сохранять как нужное без операции"; "FINANCIAL" -> "Финансовый отправитель"; "BLOCK_SENDER" -> "Не собирать сообщения отправителя"; else -> "Проверять вручную" })
+                    Text(when (rule.action) { "IGNORE" -> AppText.get("Пропускать"); "AUTO" -> AppText.get("Учитывать автоматически"); "KEEP" -> AppText.get("Сохранять как нужное без операции"); "FINANCIAL" -> AppText.get("Финансовый отправитель"); "BLOCK_SENDER" -> AppText.get("Не собирать сообщения отправителя"); else -> AppText.get("Проверять вручную") })
                     if (rule.income != null) {
-                        Text(if (rule.transfer == true) "Перевод · без влияния на баланс" else if (rule.income) "Доход · ${rule.incomeSourceName ?: "Прочий доход"}"
-                            else "Расход · ${categories.find { it.id == rule.expenseCategoryId }?.name ?: "Без категории"}")
+                        Text(if (rule.transfer == true) AppText.get("Перевод · без влияния на баланс") else if (rule.income) AppText.get("Доход · {arg0}", rule.incomeSourceName ?: AppText.get("Прочий доход"))
+                            else AppText.get("Расход · {arg0}", categories.find { it.id == rule.expenseCategoryId }?.name ?: AppText.get("Без категории")))
                     }
-                    rule.bankName?.let { Text("Банк: $it") }
-                    rule.textFilter?.let { Text("Содержит: $it") }
+                    rule.bankName?.let { Text(AppText.get("Банк: {arg0}", it)) }
+                    rule.textFilter?.let { Text(AppText.get("Содержит: {arg0}", it)) }
                     Text(rule.template.take(250), color = AppColors.SecondaryText)
-                    if (rule.action in listOf("FINANCIAL", "BLOCK_SENDER")) TextButton(onClick = { onSender(rule.source, rule.sender) }) { Text("Изменить отправителя") }
-                    else TextButton(onClick = { onEdit(rule) }) { Text("Изменить по сообщению") }
-                    TextButton(onClick = { onForget(rule.key) }) { Text("Забыть правило") }
+                    if (rule.action in listOf("FINANCIAL", "BLOCK_SENDER")) TextButton(onClick = { onSender(rule.source, rule.sender) }) { Text(AppText.get("Изменить отправителя")) }
+                    else TextButton(onClick = { onEdit(rule) }) { Text(AppText.get("Изменить по сообщению")) }
+                    TextButton(onClick = { onForget(rule.key) }) { Text(AppText.get("Забыть правило")) }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(AppText.get("Закрыть")) } }
     )
 }
 
@@ -413,7 +415,7 @@ private fun PasteMessageDialog(onDismiss: () -> Unit) {
                 scope.launch {
                     try {
                         val at = System.currentTimeMillis()
-                        FinanceMessageCapture.receive(context.applicationContext, "MANUAL", sender.ifBlank { "Вставленный текст" }, title, body, at, "manual:$at:${FinanceMessageParser.hash(body)}")
+                        FinanceMessageCapture.receive(context.applicationContext, "MANUAL", sender.ifBlank { AppText.get("Вставленный текст") }, title, body, at, "manual:$at:${FinanceMessageParser.hash(body)}")
                         onDismiss()
                     } catch (failure: Exception) {
                         if (failure is kotlinx.coroutines.CancellationException) throw failure
@@ -424,43 +426,43 @@ private fun PasteMessageDialog(onDismiss: () -> Unit) {
     val dismiss = rememberDismissGuard(sender.isNotBlank() || title.isNotBlank() || body.isNotBlank(), ::save, onDismiss)
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text("Импорт текста сообщения") },
+        title = { Text(AppText.get("Импорт текста сообщения")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(sender, { sender = it }, label = { Text("Источник или отправитель") })
-                OutlinedTextField(title, { title = it }, label = { Text("Заголовок") })
-                OutlinedTextField(body, { body = it }, label = { Text("Текст SMS или письма") }, minLines = 3, maxLines = 6)
-                Text("Вставленный и переданный вручную текст всегда приходит на проверку.", color = AppColors.SecondaryText)
-                if (error) Text("Не удалось сохранить текст", color = AppColors.Red)
+                OutlinedTextField(sender, { sender = it }, label = { Text(AppText.get("Источник или отправитель")) })
+                OutlinedTextField(title, { title = it }, label = { Text(AppText.get("Заголовок")) })
+                OutlinedTextField(body, { body = it }, label = { Text(AppText.get("Текст SMS или письма")) }, minLines = 3, maxLines = 6)
+                Text(AppText.get("Вставленный и переданный вручную текст всегда приходит на проверку."), color = AppColors.SecondaryText)
+                if (error) Text(AppText.get("Не удалось сохранить текст"), color = AppColors.Red)
             }
         },
         confirmButton = {
-            TextButton(enabled = body.isNotBlank(), onClick = ::save) { Text("В обработку") }
+            TextButton(enabled = body.isNotBlank(), onClick = ::save) { Text(AppText.get("В обработку")) }
 
         },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } }
+        dismissButton = { TextButton(onClick = dismiss) { Text(AppText.get("Отмена")) } }
     )
 }
 
 private fun sourceLabel(source: String): String = when (source) {
-    "APP" -> "Приложение"
+    "APP" -> AppText.get("Приложение")
     "SMS" -> "SMS"
-    "EMAIL" -> "Почта"
-    "NOTIFICATION" -> "Уведомление"
-    else -> "Импорт текста"
+    "EMAIL" -> AppText.get("Почта")
+    "NOTIFICATION" -> AppText.get("Уведомление")
+    else -> AppText.get("Импорт текста")
 }
 
 
 @Composable
 private fun FinanceDirectionButtons(income: Boolean?, transfer: Boolean, onChange: (Boolean, Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(Triple(false, false, "Расход"), Triple(true, false, "Доход"), Triple(false, true, "Перевод")).forEach { (value, neutral, label) ->
+        listOf(Triple(false, false, AppText.get("Расход")), Triple(true, false, AppText.get("Доход")), Triple(false, true, AppText.get("Перевод"))).forEach { (value, neutral, label) ->
             val active = if (neutral) transfer else !transfer && income == value
             OutlinedButton(
                 onClick = { onChange(value, neutral) },
                 modifier = Modifier.weight(1f).semantics { selected = active },
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-                border = BorderStroke(1.dp, if (active) Color.White else Color.Gray),
+                border = BorderStroke(1.dp, if (active) AppColors.MainText else Color.Gray),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.MainText)
             ) { Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false) }
         }
@@ -476,15 +478,15 @@ private fun SenderSettingsDialog(
     var financial by remember(source, sender) { mutableStateOf(rule?.action != "BLOCK_SENDER") }
     val dismiss = rememberDismissGuard(bank != rule?.bankName.orEmpty() || financial != (rule?.action != "BLOCK_SENDER"),
         { onSave(bank, financial) }, onDismiss)
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Отправитель") }, text = {
+    AlertDialog(onDismissRequest = dismiss, title = { Text(AppText.get("Отправитель")) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${sourceLabel(source)} · $sender")
-            OutlinedTextField(bank, { bank = it }, label = { Text("Банк или организация") }, singleLine = true)
-            CaptureToggle("Финансовый отправитель", financial) { financial = it }
-            Text(if (financial) "Новые сообщения будут обрабатываться. Категорию и автоматический учёт задавай отдельно для конкретных операций."
-                else "Новые сообщения этого отправителя собираться не будут. Уже накопленные неучтённые сообщения удалятся независимо от содержания. Учтённые операции сохранятся. Включить обратно можно в правилах.")
+            OutlinedTextField(bank, { bank = it }, label = { Text(AppText.get("Банк или организация")) }, singleLine = true)
+            CaptureToggle(AppText.get("Финансовый отправитель"), financial) { financial = it }
+            Text(if (financial) AppText.get("Новые сообщения будут обрабатываться. Категорию и автоматический учёт задавай отдельно для конкретных операций.")
+                else AppText.get("Новые сообщения этого отправителя собираться не будут. Уже накопленные неучтённые сообщения удалятся независимо от содержания. Учтённые операции сохранятся. Включить обратно можно в правилах."))
             error?.let { Text(it, color = AppColors.Red) }
         }
-    }, confirmButton = { TextButton(onClick = { onSave(bank, financial) }) { Text("Сохранить") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } })
+    }, confirmButton = { TextButton(onClick = { onSave(bank, financial) }) { Text(AppText.get("Сохранить")) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(AppText.get("Отмена")) } })
 }

@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.ui.screens
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,33 +43,33 @@ internal fun FinanceSendersDialog(
         if (packageName.matches(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+"))) { onBlock("APP", packageName); packageName = ""; onDismiss() }
         else validation = true
     }, onDismiss)
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Отправители") }, text = {
+    AlertDialog(onDismissRequest = dismiss, title = { Text(AppText.get("Отправители")) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Блокировка приложения действует на все его уведомления, независимо от текста. Неучтённые сообщения удалятся, учтённые доходы и расходы сохранятся.")
+            Text(AppText.get("Блокировка приложения действует на все его уведомления, независимо от текста. Неучтённые сообщения удалятся, учтённые доходы и расходы сохранятся."))
             OutlinedTextField(packageName, { packageName = it.trim() }, singleLine = true,
-                label = { Text("Заблокировать приложение по имени пакета") },
+                label = { Text(AppText.get("Заблокировать приложение по имени пакета")) },
                 placeholder = { Text("com.xiaomi.hm.health") })
             TextButton(enabled = packageName.matches(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")),
-                onClick = { onBlock("APP", packageName); packageName = "" }) { Text("Заблокировать приложение") }
-            if (validation) Text("Проверь имя пакета приложения.", color = AppColors.Red)
+                onClick = { onBlock("APP", packageName); packageName = "" }) { Text(AppText.get("Заблокировать приложение")) }
+            if (validation) Text(AppText.get("Проверь имя пакета приложения."), color = AppColors.Red)
             error?.let { Text(it, color = AppColors.Red) }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (groups.isEmpty()) item { Text("Отправителей пока нет") }
+                if (groups.isEmpty()) item { Text(AppText.get("Отправителей пока нет")) }
                 items(groups, key = { it.source + "\n" + it.sender }) { group ->
                     val rule = profiles[FinanceMessageParser.senderKey(group.source, group.sender)]
                         ?: if (group.source == "APP") profiles[FinanceMessageParser.senderKey("NOTIFICATION", group.sender)] else null
                     val blocked = rule?.action == "BLOCK_SENDER"
                     Column {
                         Text(group.sender, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("${if (group.source == "APP") "Приложение" else group.source} · ${group.count} неучтённых · ${if (blocked) "заблокировано" else "сбор включён"}", color = AppColors.SecondaryText)
+                        Text(AppText.get("{arg0} · {arg1} неучтённых · {arg2}", if (group.source == "APP") AppText.get("Приложение") else group.source, group.count, if (blocked) AppText.get("заблокировано") else AppText.get("сбор включён")), color = AppColors.SecondaryText)
                         Row {
-                            TextButton(onClick = { onSettings(group.source, group.sender) }) { Text("Настроить") }
-                            TextButton(enabled = !blocked, onClick = { onBlock(group.source, group.sender) }) { Text("Не собирать и очистить") }
+                            TextButton(onClick = { onSettings(group.source, group.sender) }) { Text(AppText.get("Настроить")) }
+                            TextButton(enabled = !blocked, onClick = { onBlock(group.source, group.sender) }) { Text(AppText.get("Не собирать и очистить")) }
                         }
                         HorizontalDivider()
                     }
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = dismiss) { Text("Готово") } })
+    }, confirmButton = { TextButton(onClick = dismiss) { Text(AppText.get("Готово")) } })
 }

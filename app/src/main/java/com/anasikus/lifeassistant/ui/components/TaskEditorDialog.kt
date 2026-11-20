@@ -1,6 +1,7 @@
 
 package com.anasikus.lifeassistant.ui.components
 
+import com.anasikus.lifeassistant.settings.AppText
 import android.app.DatePickerDialog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +35,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.anasikus.lifeassistant.data.TaskEntity
+import com.anasikus.lifeassistant.data.TaskGroupEntity
 import com.anasikus.lifeassistant.domain.TaskRules
 import com.anasikus.lifeassistant.ui.AppColors
 import java.text.SimpleDateFormat
@@ -44,7 +46,10 @@ import java.util.Locale
 fun TaskEditorDialog(
     task: TaskEntity?,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, Int, Int) -> Unit,
+    onSave: (String, String, String, String, Int, Int, Int?, Int) -> Unit,
+    groups: List<TaskGroupEntity> = emptyList(),
+    initialGroupId: Int? = null,
+    projectTotal: Int? = null,
     initialDate: String = TaskRules.today(),
     creationHeader: (@Composable () -> Unit)? = null,
     error: String? = null
@@ -71,15 +76,21 @@ fun TaskEditorDialog(
         )
     }
 
-    var hours by remember(task?.id) { mutableStateOf(((task?.estimatedDurationMinutes ?: 60) / 60).toString()) }
-    var minutes by remember(task?.id) { mutableStateOf(((task?.estimatedDurationMinutes ?: 60) % 60).toString()) }
+    var hours by remember(task?.id) { mutableStateOf(((projectTotal ?: task?.estimatedDurationMinutes ?: 60) / 60).toString()) }
+    var minutes by remember(task?.id) { mutableStateOf(((projectTotal ?: task?.estimatedDurationMinutes ?: 60) % 60).toString()) }
     var priority by remember(task?.id) { mutableStateOf(task?.priorityLevel?.coerceIn(0, 2) ?: 1) }
     var priorityMenu by remember { mutableStateOf(false) }
     var durationError by remember { mutableStateOf(false) }
     val h = hours.toIntOrNull()
     val m = minutes.toIntOrNull()
-    val duration = if (h != null && m != null && h in 0..24 && m in 0..59) h * 60 + m else null
+    val duration = if (h != null && m != null && h in 0..10000 && m in 0..59) h * 60 + m else null
 
+    var group by remember(task?.id) { mutableStateOf(task?.groupId ?: initialGroupId) }
+    var spentHours by remember(task?.id) { mutableStateOf(((task?.spentMinutes ?: 0) / 60).toString()) }
+    var spentMinutes by remember(task?.id) { mutableStateOf(((task?.spentMinutes ?: 0) % 60).toString()) }
+    val spent = spentHours.toIntOrNull()?.takeIf { it in 0..10000 }?.let { hours ->
+        spentMinutes.toIntOrNull()?.takeIf { it in 0..59 }?.let { hours * 60 + it }
+    }
     var titleError by remember { mutableStateOf(false) }
     var dateError by remember { mutableStateOf(false) }
 
@@ -146,7 +157,7 @@ fun TaskEditorDialog(
         errorLabelColor = AppColors.Red
     )
 
-    val draft = listOf(title, description, startDate, deadline, hours, minutes, priority)
+    val draft = listOf(title, description, startDate, deadline, hours, minutes, priority, group, spentHours, spentMinutes)
     val originalDraft = remember { draft }
     fun save() {
                     when {
@@ -158,7 +169,7 @@ fun TaskEditorDialog(
                             dateError = true
                         }
 
-                        duration == null || duration !in 15..1440 -> {
+                        duration == null || duration !in 15..600000 || spent == null || spent !in 0..duration -> {
                             durationError = true
                         }
 
@@ -169,7 +180,7 @@ fun TaskEditorDialog(
                                 startDate,
                                 deadline,
                                 checkNotNull(duration),
-                                priority
+                                priority, group, checkNotNull(spent)
                             )
                         }
                     }
@@ -188,9 +199,9 @@ fun TaskEditorDialog(
         title = {
             if (creationHeader != null) CompositionLocalProvider(LocalFormSwitch provides switchForm) { creationHeader() } else Text(
                 text = if (task == null) {
-                    "Новая задача"
+                    AppText.get("Новая задача")
                 } else {
-                    "Редактирование задачи"
+                    AppText.get("Редактирование задачи")
                 },
                 fontWeight = FontWeight.Bold
             )
@@ -207,12 +218,12 @@ fun TaskEditorDialog(
                         titleError = false
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Название") },
+                    label = { Text(AppText.get("Название")) },
                     singleLine = true,
                     isError = titleError,
                     supportingText = {
                         if (titleError) {
-                            Text("Введите название задачи")
+                            Text(AppText.get("Введите название задачи"))
                         }
                     },
                     keyboardOptions = KeyboardOptions(
@@ -225,7 +236,7 @@ fun TaskEditorDialog(
                     value = description,
                     onValueChange = { description = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Описание") },
+                    label = { Text(AppText.get("Описание")) },
                     minLines = 3,
                     maxLines = 5,
                     keyboardOptions = KeyboardOptions(
@@ -234,23 +245,34 @@ fun TaskEditorDialog(
                     colors = fieldColors
                 )
 
-                Text("Примерное время на задачу", color = AppColors.MainText)
+                Text(AppText.get("Примерное время на задачу"), color = AppColors.MainText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(hours, { hours = it; durationError = false }, Modifier.weight(1f),
-                        label = { Text("Часы") }, singleLine = true, colors = fieldColors,
+                        label = { Text(AppText.get("Часы")) }, enabled = task?.isProject != true, singleLine = true, colors = fieldColors,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = durationError)
                     OutlinedTextField(minutes, { minutes = it; durationError = false }, Modifier.weight(1f),
-                        label = { Text("Минуты") }, singleLine = true, colors = fieldColors,
+                        label = { Text(AppText.get("Минуты")) }, enabled = task?.isProject != true, singleLine = true, colors = fieldColors,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = durationError)
                 }
-                Text("От 15 минут до 24 часов. Оценку можно менять; длительность в календаре тоже редактируется.",
+                Text(AppText.get("Общий объём: от 15 минут до 10 000 часов. Задача разбивается на свободные окна календаря."),
                     color = AppColors.SecondaryText, fontSize = 12.sp)
-                if (durationError) Text("Укажи время от 15 минут до 24 часов; минуты — от 0 до 59.", color = AppColors.Red)
-                if (duration != null && duration > 16 * 60) Text("Задачу длиннее 16 часов нужно разместить вручную: автоматические окна — с 07:00 до 23:00.",
-                    color = AppColors.Yellow, fontSize = 12.sp)
+                if (durationError) Text(AppText.get("Проверь общий объём и потраченное время. Потрачено не может превышать общий объём."), color = AppColors.Red)
+                ChoiceField(AppText.get("Группа"), groups.find { it.id == group }?.name ?: AppText.get("Без группы"),
+                    listOf("" to AppText.get("Без группы")) + groups.map { it.id.toString() to it.name }) { group = it.toIntOrNull() }
+                if (task?.isProject == true) Text(AppText.get("Общий объём проекта складывается из подзадач. Увеличить время можно в нужной подзадаче."), color = AppColors.SecondaryText)
+                else {
+                    Text(AppText.get("Уже потрачено (можно исправить)"), color = AppColors.MainText)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(spentHours, { spentHours = it.filter(Char::isDigit).take(5); durationError = false }, Modifier.weight(1f),
+                            label = { Text(AppText.get("Часы")) }, singleLine = true, colors = fieldColors, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                        OutlinedTextField(spentMinutes, { spentMinutes = it.filter(Char::isDigit).take(2); durationError = false }, Modifier.weight(1f),
+                            label = { Text(AppText.get("Минуты")) }, singleLine = true, colors = fieldColors, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    }
+                    Text(AppText.get("Завершённые окна учитываются автоматически по расписанию. Если в это время ты не работала, исправь значение вручную."), color = AppColors.SecondaryText)
+                }
                 Box {
                     OutlinedButton(onClick = { priorityMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Приоритет: ${TaskRules.priorityLabel(priority)} ▾", color = AppColors.Accent)
+                        Text(AppText.get("Приоритет: {arg0} ▾", TaskRules.priorityLabel(priority)), color = AppColors.Accent)
                     }
                     DropdownMenu(priorityMenu, onDismissRequest = { priorityMenu = false }) {
                         (0..2).forEach { level ->
@@ -259,7 +281,7 @@ fun TaskEditorDialog(
                         }
                     }
                 }
-                Text("Просроченные задачи и задачи со сроком в ближайшие 3 дня всегда выше остальных.",
+                Text(AppText.get("Просроченные задачи и задачи со сроком в ближайшие 3 дня всегда выше остальных."),
                     color = AppColors.SecondaryText, fontSize = 12.sp)
                 error?.let { Text(it, color = AppColors.Red) }
 
@@ -279,7 +301,7 @@ fun TaskEditorDialog(
                     }
                 ) {
                     Text(
-                        text = "Дата начала: ${TaskRules.formatDate(startDate)}",
+                        text = AppText.get("Дата начала: {arg0}", TaskRules.formatDate(startDate)),
                         color = AppColors.Accent
                     )
                 }
@@ -296,14 +318,14 @@ fun TaskEditorDialog(
                     }
                 ) {
                     Text(
-                        text = "Дедлайн: ${TaskRules.formatDate(deadline)}",
+                        text = AppText.get("Дедлайн: {arg0}", TaskRules.formatDate(deadline)),
                         color = AppColors.Accent
                     )
                 }
 
                 if (dateError) {
                     Text(
-                        text = "Дедлайн не может быть раньше даты начала.",
+                        text = AppText.get("Дедлайн не может быть раньше даты начала."),
                         color = AppColors.Red,
                         fontSize = 12.sp
                     )
@@ -314,12 +336,12 @@ fun TaskEditorDialog(
             TextButton(
                 onClick = ::save
             ) {
-                Text("Сохранить", color = AppColors.Accent)
+                Text(AppText.get("Сохранить"), color = AppColors.Accent)
             }
         },
         dismissButton = {
             TextButton(onClick = dismiss) {
-                Text("Отмена", color = AppColors.SecondaryText)
+                Text(AppText.get("Отмена"), color = AppColors.SecondaryText)
             }
         }
     )

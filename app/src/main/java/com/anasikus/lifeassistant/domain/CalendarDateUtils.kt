@@ -43,21 +43,21 @@ object CalendarDateUtils {
     fun formatLongDate(date: String): String {
         return SimpleDateFormat(
             "EEEE, d MMMM",
-            Locale("ru", "RU")
+            Locale.getDefault()
         ).format(parseCalendar(date).time)
     }
 
     fun formatShortDate(date: String): String {
         return SimpleDateFormat(
             "d MMM",
-            Locale("ru", "RU")
+            Locale.getDefault()
         ).format(parseCalendar(date).time)
     }
 
     fun formatMonth(date: String): String {
         return SimpleDateFormat(
             "LLLL yyyy",
-            Locale("ru", "RU")
+            Locale.getDefault()
         ).format(parseCalendar(date).time)
     }
 

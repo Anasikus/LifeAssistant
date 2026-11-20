@@ -1,6 +1,7 @@
 
 package com.anasikus.lifeassistant.ui.screens
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,7 +51,7 @@ fun FeaturePlaceholderScreen(
             )
 
             Text(
-                text = "Раздел находится в разработке",
+                text = AppText.get("Раздел находится в разработке"),
                 modifier = Modifier.padding(top = 24.dp),
                 color = AppColors.Accent,
                 fontSize = 13.sp,

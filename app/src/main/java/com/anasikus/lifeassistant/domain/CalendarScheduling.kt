@@ -41,8 +41,13 @@ data class ScheduledTask(
     val date: String,
     val startMinute: Int,
     val durationMinutes: Int = 60,
-    val priority: Int
-)
+    val priority: Int,
+    val sessionId: Long = 0,
+    val accounted: Boolean = false,
+    val parentTitle: String? = null
+) {
+    val displayTitle: String get() = parentTitle?.let { "$it · ${task.title}" } ?: task.title
+}
 
 object CalendarEventRules {
 

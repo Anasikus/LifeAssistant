@@ -89,11 +89,46 @@ interface CalendarPlanningDao {
     @Query("SELECT * FROM finance_transactions ORDER BY date DESC, id DESC")
     fun financeTransactions(): Flow<List<FinanceTransactionEntity>>
 
+    @Query("SELECT id FROM income_categories WHERE name = :name LIMIT 1")
+    suspend fun incomeCategoryByName(name: String): Int?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun addFinanceTransaction(value: FinanceTransactionEntity)
+    suspend fun insertFinanceTransaction(value: FinanceTransactionEntity)
+
+    suspend fun categorizeIncome(value: FinanceTransactionEntity): FinanceTransactionEntity {
+        if (!value.income || value.transfer) return value
+        if (value.sourceKey == null && value.incomeCategoryId != null) {
+            val category = incomeCategory(value.incomeCategoryId) ?: return value.copy(incomeCategoryId = null)
+            return value.copy(sourceKey = "income:" + com.anasikus.lifeassistant.domain.FinanceMessageParser.hash(category.name.lowercase(java.util.Locale.ROOT)), sourceName = category.name)
+        }
+        if (value.sourceKey == null || value.sourceName.isNullOrBlank()) return value
+        val name = checkNotNull(value.sourceName)
+        var id = incomeCategoryByName(name)
+        if (id == null) { writeIncomeCategory(IncomeCategoryEntity(name = name)); id = incomeCategoryByName(name) }
+        return value.copy(incomeCategoryId = id)
+    }
+
+    @Transaction
+    suspend fun addFinanceTransaction(value: FinanceTransactionEntity) { insertFinanceTransaction(categorizeIncome(value)) }
 
     @Update
-    suspend fun updateFinanceTransaction(value: FinanceTransactionEntity)
+    suspend fun writeFinanceTransaction(value: FinanceTransactionEntity)
+
+    @Transaction
+    suspend fun updateFinanceTransaction(value: FinanceTransactionEntity) {
+        val result = categorizeIncome(value)
+        writeFinanceTransaction(result)
+        result.inboxMessageId?.let { id ->
+            updateInboxTransaction(id, result.date, result.amountCents, result.expenseCategoryId, result.sourceKey, result.sourceName)
+            updateInboxRule(id, result.expenseCategoryId, result.sourceKey, result.sourceName)
+        }
+    }
+
+    @Query("UPDATE finance_inbox SET transactionDate=:date, proposedAmountCents=:amount, expenseCategoryId=:categoryId, incomeSourceKey=:sourceKey, incomeSourceName=:sourceName WHERE id=:id")
+    suspend fun updateInboxTransaction(id: Long, date: String, amount: Long, categoryId: Int?, sourceKey: String?, sourceName: String?)
+
+    @Query("UPDATE finance_import_rules SET expenseCategoryId=:categoryId, incomeSourceKey=:sourceKey, incomeSourceName=:sourceName WHERE key=(SELECT ruleKey FROM finance_inbox WHERE id=:id)")
+    suspend fun updateInboxRule(id: Long, categoryId: Int?, sourceKey: String?, sourceName: String?)
 
     @Query("UPDATE finance_transactions SET expenseCategoryId = :categoryId WHERE id = :id AND income = 0")
     suspend fun setExpenseCategory(id: Int, categoryId: Int?)

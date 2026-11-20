@@ -11,6 +11,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [
         TaskEntity::class,
+        TaskGroupEntity::class,
+        TaskSessionEntity::class,
         CalendarEventEntity::class,
         CalendarTaskPlacementEntity::class,
         CalendarEventOverrideEntity::class,
@@ -25,7 +27,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinanceInboxEntity::class,
         FinanceImportRuleEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -242,6 +244,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tasks ADD COLUMN groupId INTEGER")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN parentId INTEGER")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN spentMinutes INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE tasks ADD COLUMN isProject INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("CREATE TABLE IF NOT EXISTS task_groups (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS task_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, taskId INTEGER NOT NULL, date TEXT NOT NULL, startMinute INTEGER NOT NULL, durationMinutes INTEGER NOT NULL, automatic INTEGER NOT NULL, accounted INTEGER NOT NULL)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_task_sessions_taskId ON task_sessions(taskId)")
+                database.execSQL("INSERT INTO task_sessions(taskId,date,startMinute,durationMinutes,automatic,accounted) SELECT p.taskId,p.date,p.startMinute,min(p.durationMinutes,t.estimatedDurationMinutes),0,0 FROM calendar_task_placements p JOIN tasks t ON t.id=p.taskId WHERE p.hidden=0")
+                database.execSQL("INSERT INTO income_categories(name) SELECT DISTINCT sourceName FROM finance_transactions t WHERE income=1 AND transfer=0 AND sourceName IS NOT NULL AND sourceName!='' AND NOT EXISTS (SELECT 1 FROM income_categories c WHERE c.name=t.sourceName)")
+                database.execSQL("UPDATE finance_transactions SET incomeCategoryId=(SELECT id FROM income_categories c WHERE c.name=finance_transactions.sourceName LIMIT 1) WHERE income=1 AND transfer=0 AND sourceName IS NOT NULL AND (incomeCategoryId IS NULL OR sourceKey LIKE 'event:%' OR sourceKey='schedule')")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -276,7 +293,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_9_10,
                         MIGRATION_10_11,
                         MIGRATION_11_12,
-                        MIGRATION_12_13
+                        MIGRATION_12_13,
+                        MIGRATION_13_14
                         )
                     .build()
                     .also {

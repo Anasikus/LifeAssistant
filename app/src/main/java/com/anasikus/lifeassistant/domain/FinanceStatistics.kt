@@ -1,5 +1,7 @@
 package com.anasikus.lifeassistant.domain
 
+import com.anasikus.lifeassistant.settings.AppText
+
 import com.anasikus.lifeassistant.data.ExpenseCategoryEntity
 import com.anasikus.lifeassistant.data.FinanceTransactionEntity
 
@@ -44,7 +46,7 @@ object FinanceStatistics {
     ): List<FinanceCategoryTotal> {
         val names = categories.associate { it.id to it.name }
         return transactions.filter { !it.transfer && !it.income && it.date in start..end && it.amountCents > 0 }
-            .groupBy { names[it.expenseCategoryId] ?: "Без категории" }
+            .groupBy { names[it.expenseCategoryId] ?: AppText.get("Без категории") }
             .map { (name, rows) -> FinanceCategoryTotal(name, rows.sumOf { it.amountCents }) }
             .sortedWith(compareByDescending<FinanceCategoryTotal> { it.amount }.thenBy { it.name })
     }

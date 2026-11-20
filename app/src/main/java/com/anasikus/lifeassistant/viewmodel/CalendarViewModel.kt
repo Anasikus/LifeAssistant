@@ -1,6 +1,7 @@
 
 package com.anasikus.lifeassistant.viewmodel
 
+import com.anasikus.lifeassistant.settings.AppText
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -65,7 +66,7 @@ class CalendarViewModel(
             try { action(); onSaved() }
             catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                financeError.value = "Не удалось сохранить изменение. Данные формы оставлены для повторной попытки."
+                financeError.value = AppText.get("Не удалось сохранить изменение. Данные формы оставлены для повторной попытки.")
             }
         }
     }
@@ -104,7 +105,7 @@ class CalendarViewModel(
                 onSaved()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                inboxError.value = "Не удалось сохранить операцию. Повтори сохранение."
+                inboxError.value = AppText.get("Не удалось сохранить операцию. Повтори сохранение.")
             }
         }
     }
@@ -117,7 +118,7 @@ class CalendarViewModel(
                 onSaved()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                inboxError.value = "Не удалось сохранить сообщение. Повтори сохранение."
+                inboxError.value = AppText.get("Не удалось сохранить сообщение. Повтори сохранение.")
             }
         }
     }
@@ -130,7 +131,7 @@ class CalendarViewModel(
                 onSaved()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                inboxError.value = "Не удалось удалить ненужные сообщения. Повтори действие."
+                inboxError.value = AppText.get("Не удалось удалить ненужные сообщения. Повтори действие.")
             }
         }
     }
@@ -147,7 +148,7 @@ class CalendarViewModel(
                 onSaved()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                inboxError.value = "Не удалось сохранить настройки отправителя."
+                inboxError.value = AppText.get("Не удалось сохранить настройки отправителя.")
             }
         }
     }
@@ -196,10 +197,10 @@ class CalendarViewModel(
                     else com.anasikus.lifeassistant.repository.HolidayImporter.download(url)
                 }
                 repository.planning.importSpecialDates(values)
-                planningMessage.value = "Календарь обработан: ${values.size} дат. Совпадающие записи пропущены."
+                planningMessage.value = AppText.get("Календарь обработан: {arg0} дат. Совпадающие записи пропущены.", values.size)
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                planningMessage.value = error.message ?: "Не удалось загрузить календарь."
+                planningMessage.value = error.message ?: AppText.get("Не удалось загрузить календарь.")
             } finally { importing.value = false }
         }
     }
