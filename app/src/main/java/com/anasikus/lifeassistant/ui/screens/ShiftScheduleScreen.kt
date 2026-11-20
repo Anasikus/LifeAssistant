@@ -16,7 +16,7 @@ import com.anasikus.lifeassistant.domain.ShiftRules
 import com.anasikus.lifeassistant.ui.AppColors
 import com.anasikus.lifeassistant.ui.components.CalendarEventDialog
 import com.anasikus.lifeassistant.ui.components.PlanningDateField
-import com.anasikus.lifeassistant.ui.components.ShiftSettings
+import com.anasikus.lifeassistant.ui.components.*
 import com.anasikus.lifeassistant.ui.components.shiftStatus
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
 
@@ -100,21 +100,28 @@ internal fun ShiftScheduleScreen(
             }
         }
         if (showSettings) {
+            val drafts = remember { FormDraftRegistry() }
+            val protect = rememberGuardedAction(drafts)
+            val error by viewModel.financeError.collectAsState()
+            CompositionLocalProvider(LocalFormDraftRegistry provides drafts) {
             AlertDialog(
-                onDismissRequest = { showSettings = false },
+                onDismissRequest = { protect { showSettings = false } },
                 title = { Text("Настройки графика") },
                 text = {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         ShiftSettings(date, pattern, days, viewModel)
+                        error?.let { Text(it, color = AppColors.Red) }
                     }
                 },
-                confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Закрыть") } }
+                confirmButton = { TextButton(onClick = { protect { showSettings = false } }) { Text("Закрыть") } }
             )
+            }
         }
         if (showEditor) {
+            val eventError by viewModel.financeError.collectAsState()
             val current = editing
             CalendarEventDialog(
-                event = current,
+                event = current, error = eventError,
                 initialDate = current?.startDate ?: date,
                 initialStartMinute = current?.startMinute ?: 480,
                 initialDurationMinutes = current?.durationMinutes ?: 720,
@@ -140,8 +147,8 @@ internal fun ShiftScheduleScreen(
                         payMode = if (isWork) payMode.name else null,
                         payAmountCents = if (isWork) amount else null
                     )
-                    if (current == null) viewModel.addEvent(event) else viewModel.updateEvent(event)
-                    showEditor = false
+                    if (current == null) viewModel.addEvent(event) { showEditor = false }
+                    else viewModel.updateEvent(event) { showEditor = false }
                 },
                 onDeleteAll = current?.let { event ->
                     { viewModel.deleteEvent(event); showEditor = false }

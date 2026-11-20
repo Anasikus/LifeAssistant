@@ -5,10 +5,48 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CalendarPlanningDao {
+    @Query("SELECT * FROM income_categories ORDER BY name")
+    fun incomeCategories(): Flow<List<IncomeCategoryEntity>>
+
+    @Query("SELECT * FROM income_categories WHERE id = :id")
+    suspend fun incomeCategory(id: Int): IncomeCategoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun writeIncomeCategory(value: IncomeCategoryEntity)
+
+    @Query("UPDATE finance_import_rules SET incomeSourceName = :name WHERE incomeSourceKey LIKE 'income:%' AND incomeSourceName = :oldName")
+    suspend fun renameIncomeRules(oldName: String, name: String)
+
+    @Query("UPDATE finance_import_rules SET action = 'REVIEW', incomeSourceKey = NULL, incomeSourceName = NULL WHERE incomeSourceKey LIKE 'income:%' AND incomeSourceName = :name")
+    suspend fun resetIncomeRules(name: String)
+
+    @Transaction
+    suspend fun saveIncomeCategory(value: IncomeCategoryEntity) {
+        incomeCategory(value.id)?.let { renameIncomeRules(it.name, value.name) }
+        writeIncomeCategory(value)
+    }
+
+    @Query("UPDATE finance_transactions SET incomeCategoryId = :categoryId WHERE id = :id AND income = 1 AND transfer = 0")
+    suspend fun setIncomeCategory(id: Int, categoryId: Int?)
+
+    @Query("UPDATE finance_transactions SET incomeCategoryId = NULL WHERE incomeCategoryId = :id")
+    suspend fun detachIncomeCategory(id: Int)
+
+    @Query("DELETE FROM income_categories WHERE id = :id")
+    suspend fun removeIncomeCategory(id: Int)
+
+    @Transaction
+    suspend fun deleteIncomeCategory(id: Int) {
+        incomeCategory(id)?.let { resetIncomeRules(it.name) }
+        detachIncomeCategory(id)
+        removeIncomeCategory(id)
+    }
+
     @Query("SELECT * FROM expense_categories ORDER BY name")
     fun expenseCategories(): Flow<List<ExpenseCategoryEntity>>
 
@@ -53,6 +91,9 @@ interface CalendarPlanningDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addFinanceTransaction(value: FinanceTransactionEntity)
+
+    @Update
+    suspend fun updateFinanceTransaction(value: FinanceTransactionEntity)
 
     @Query("UPDATE finance_transactions SET expenseCategoryId = :categoryId WHERE id = :id AND income = 0")
     suspend fun setExpenseCategory(id: Int, categoryId: Int?)

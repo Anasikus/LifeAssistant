@@ -17,5 +17,6 @@ data class FinanceTransactionEntity(
     val expenseCategoryId: Int? = null,
     val planKey: String? = null,
     val inboxMessageId: Long? = null,
-    @ColumnInfo(defaultValue = "0") val transfer: Boolean = false
+    @ColumnInfo(defaultValue = "0") val transfer: Boolean = false,
+    val incomeCategoryId: Int? = null
 )

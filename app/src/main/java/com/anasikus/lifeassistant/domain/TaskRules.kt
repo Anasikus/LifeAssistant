@@ -78,6 +78,7 @@ object TaskRules {
             .thenBy { it.id }
 
     fun status(task: TaskEntity): String {
+        if (task.frozen && !task.completed) return "Заморожена"
         if (task.completed) {
             val completedAt = task.completedAt
 

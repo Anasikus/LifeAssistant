@@ -1,5 +1,6 @@
 package com.anasikus.lifeassistant.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -17,5 +18,15 @@ data class PaymentPlanEntity(
     val startDate: String,
     val everyMonths: Int,
     val reminderDays: Int,
-    val categoryId: Int? = null
+    val categoryId: Int? = null,
+    @ColumnInfo(defaultValue = "'MONTH'") val repeatUnit: String = "MONTH",
+    @ColumnInfo(defaultValue = "0") val repeatEvery: Int = 0,
+    @ColumnInfo(defaultValue = "540") val reminderMinute: Int = 540,
+    @ColumnInfo(defaultValue = "0") val reminderRepeatDays: Int = 0
+)
+
+@Entity(tableName = "income_categories")
+data class IncomeCategoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String
 )

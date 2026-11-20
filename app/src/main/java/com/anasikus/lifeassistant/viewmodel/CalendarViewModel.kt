@@ -58,21 +58,31 @@ class CalendarViewModel(
     val paymentPlans = repository.planning.paymentPlans()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun saveExpenseCategory(category: ExpenseCategoryEntity) {
-        viewModelScope.launch { repository.planning.saveExpenseCategory(category) }
+    val financeError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private fun financeChange(onSaved: () -> Unit = {}, action: suspend () -> Unit) {
+        viewModelScope.launch {
+            financeError.value = null
+            try { action(); onSaved() }
+            catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                financeError.value = "Не удалось сохранить изменение. Данные формы оставлены для повторной попытки."
+            }
+        }
     }
+    val incomeCategories = repository.planning.incomeCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun deleteExpenseCategory(id: Int) {
-        viewModelScope.launch { repository.planning.deleteExpenseCategory(id) }
-    }
+    fun saveIncomeCategory(category: com.anasikus.lifeassistant.data.IncomeCategoryEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.saveIncomeCategory(category) }
+    fun deleteIncomeCategory(id: Int) = financeChange { repository.planning.deleteIncomeCategory(id) }
+    fun setIncomeCategory(id: Int, categoryId: Int?) = financeChange { repository.planning.setIncomeCategory(id, categoryId) }
 
-    fun savePaymentPlan(plan: PaymentPlanEntity) {
-        viewModelScope.launch { repository.planning.savePaymentPlan(plan) }
-    }
-
-    fun deletePaymentPlan(id: Int) {
-        viewModelScope.launch { repository.planning.deletePaymentPlan(id) }
-    }
+    fun saveExpenseCategory(category: ExpenseCategoryEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.saveExpenseCategory(category) }
+    fun deleteExpenseCategory(id: Int) = financeChange { repository.planning.deleteExpenseCategory(id) }
+    fun savePaymentPlan(plan: PaymentPlanEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.savePaymentPlan(plan) }
+    fun deletePaymentPlan(id: Int) = financeChange { repository.planning.deletePaymentPlan(id) }
 
     val inboxMessages = repository.inbox.messages()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -146,9 +156,12 @@ class CalendarViewModel(
         viewModelScope.launch { repository.inbox.forgetRule(key) }
     }
 
-    fun addFinanceTransaction(value: FinanceTransactionEntity) {
-        viewModelScope.launch { repository.planning.addFinanceTransaction(value) }
-    }
+    fun addFinanceTransaction(value: FinanceTransactionEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.addFinanceTransaction(value) }
+
+
+    fun updateFinanceTransaction(value: FinanceTransactionEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.updateFinanceTransaction(value) }
 
     fun setExpenseCategory(id: Int, categoryId: Int?) {
         viewModelScope.launch { repository.inbox.setFinancialCategory(id, categoryId) }
@@ -158,23 +171,19 @@ class CalendarViewModel(
         viewModelScope.launch { repository.inbox.deleteFinancialTransaction(id) }
     }
 
-    fun saveCategory(value: com.anasikus.lifeassistant.data.EventCategoryEntity) {
-        viewModelScope.launch { repository.planning.saveCategory(value) }
-    }
+    fun saveCategory(value: com.anasikus.lifeassistant.data.EventCategoryEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.saveCategory(value) }
     fun deleteCategory(id: Int) { viewModelScope.launch { repository.planning.deleteCategory(id) } }
-    fun savePattern(value: com.anasikus.lifeassistant.data.ShiftPatternEntity) {
-        viewModelScope.launch { repository.planning.savePattern(value) }
-    }
-    fun saveShift(value: com.anasikus.lifeassistant.data.ShiftDayEntity) {
-        viewModelScope.launch { repository.planning.saveShift(value.copy(predicted = false, confidence = 100)) }
-    }
+    fun savePattern(value: com.anasikus.lifeassistant.data.ShiftPatternEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.savePattern(value) }
+    fun saveShift(value: com.anasikus.lifeassistant.data.ShiftDayEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.saveShift(value.copy(predicted = false, confidence = 100)) }
     fun deleteShift(date: String) { viewModelScope.launch { repository.planning.deleteShift(date) } }
     fun applyForecast(values: List<com.anasikus.lifeassistant.data.ShiftDayEntity>) {
         viewModelScope.launch { repository.planning.saveForecast(values) }
     }
-    fun saveSpecialDate(value: com.anasikus.lifeassistant.data.SpecialDateEntity) {
-        viewModelScope.launch { repository.planning.saveSpecialDate(value) }
-    }
+    fun saveSpecialDate(value: com.anasikus.lifeassistant.data.SpecialDateEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.planning.saveSpecialDate(value) }
     fun deleteSpecialDate(id: Int) { viewModelScope.launch { repository.planning.deleteSpecialDate(id) } }
     fun importHolidays(url: String?) {
         if (importing.value) return
@@ -195,17 +204,11 @@ class CalendarViewModel(
         }
     }
 
-    fun addEvent(event: CalendarEventEntity) {
-        viewModelScope.launch {
-            repository.addEvent(event)
-        }
-    }
+    fun addEvent(event: CalendarEventEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.addEvent(event) }
 
-    fun updateEvent(event: CalendarEventEntity) {
-        viewModelScope.launch {
-            repository.updateEvent(event)
-        }
-    }
+    fun updateEvent(event: CalendarEventEntity, onSaved: () -> Unit = {}) =
+        financeChange(onSaved) { repository.updateEvent(event) }
 
     fun deleteEvent(event: CalendarEventEntity) {
         viewModelScope.launch {
@@ -227,12 +230,9 @@ class CalendarViewModel(
 
     fun saveEditedOccurrence(
         event: CalendarEventEntity,
-        occurrence: CalendarEventOverrideEntity?
-    ) {
-        viewModelScope.launch {
-            repository.saveEditedOccurrence(event, occurrence)
-        }
-    }
+        occurrence: CalendarEventOverrideEntity?,
+        onSaved: () -> Unit = {}
+    ) = financeChange(onSaved) { repository.saveEditedOccurrence(event, occurrence) }
 
     fun saveEventOverride(override: CalendarEventOverrideEntity) {
         viewModelScope.launch {

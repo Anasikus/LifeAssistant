@@ -25,39 +25,56 @@ fun CalendarPlanningDialog(viewModel: CalendarViewModel, selectedDate: String, o
     val message by viewModel.planningMessage.collectAsState()
     val importing by viewModel.importing.collectAsState()
     var tab by remember { mutableStateOf(0) }
+    val drafts = remember { FormDraftRegistry() }
+    val protect = rememberGuardedAction(drafts)
+    val error by viewModel.financeError.collectAsState()
+    CompositionLocalProvider(LocalFormDraftRegistry provides drafts) {
     MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card, background = AppColors.Background, onSurface = AppColors.MainText)) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { protect(onDismiss) },
         containerColor = AppColors.Card,
         title = { Text("Настройки календаря", color = AppColors.MainText) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row {
                     listOf("Категории", "Праздники").forEachIndexed { index, label ->
-                        TextButton(onClick = { tab = index }) { Text(label, color = if (tab == index) AppColors.Accent else AppColors.SecondaryText, fontSize = 11.sp) }
+                        TextButton(onClick = { protect { tab = index } }) { Text(label, color = if (tab == index) AppColors.Accent else AppColors.SecondaryText, fontSize = 11.sp) }
                     }
                 }
+                error?.let { Text(it, color = AppColors.Red) }
                 when (tab) {
-                    0 -> CategorySettings(categories, viewModel::saveCategory, viewModel::deleteCategory)
+                    0 -> CategorySettings(categories, { value, saved -> viewModel.saveCategory(value, saved) }, viewModel::deleteCategory)
                     1 -> SpecialDateSettings(selectedDate, dates, importing, message, viewModel)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть", color = AppColors.Accent) } }
+        confirmButton = { TextButton(onClick = { protect(onDismiss) }) { Text("Закрыть", color = AppColors.Accent) } }
     )
+    }
     }
 }
 
 @Composable
-private fun CategorySettings(categories: List<EventCategoryEntity>, onSave: (EventCategoryEntity) -> Unit, onDelete: (Int) -> Unit) {
+private fun CategorySettings(categories: List<EventCategoryEntity>, onSave: (EventCategoryEntity, () -> Unit) -> Unit, onDelete: (Int) -> Unit) {
     var editing by remember { mutableStateOf<EventCategoryEntity?>(null) }
     var deleting by remember { mutableStateOf<EventCategoryEntity?>(null) }
     var name by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf("GENERAL") }
+    var error by remember { mutableStateOf(false) }
+    fun save(after: () -> Unit) {
+        if (name.isBlank() || categories.any { it.id != editing?.id && it.name.equals(name.trim(), true) }) error = true
+        else onSave(EventCategoryEntity(editing?.id ?: 0, name.trim(), kind)) {
+            editing = null; name = ""; kind = "GENERAL"; error = false; after()
+        }
+    }
+    RegisterFormDraft(name != editing?.name.orEmpty() || kind != (editing?.kind ?: "GENERAL"), ::save)
+    val registry = LocalFormDraftRegistry.current ?: remember { FormDraftRegistry() }
+    val protect = rememberGuardedAction(registry)
+    if (error) Text("Введи уникальное название категории.", color = AppColors.Red)
     categories.forEach { category ->
         Text(category.name, color = AppColors.MainText)
         Row {
-            TextButton(onClick = { editing = category; name = category.name; kind = category.kind }) { Text("Изменить") }
+            TextButton(onClick = { protect { editing = category; name = category.name; kind = category.kind } }) { Text("Изменить") }
             TextButton(onClick = { deleting = category }) { Text("Удалить", color = AppColors.Red) }
         }
     }
@@ -66,11 +83,8 @@ private fun CategorySettings(categories: List<EventCategoryEntity>, onSave: (Eve
     listOf("GENERAL" to "Мероприятие", "WORK" to "График смен", "SIDE_JOB" to "Разовая подработка", "HOLIDAY" to "Праздник").forEach { (value, label) ->
         TextButton(onClick = { kind = value }) { Text("${if (kind == value) "●" else "○"} $label") }
     }
-    Button(onClick = {
-        onSave(EventCategoryEntity(editing?.id ?: 0, name.trim(), kind))
-        editing = null; name = ""; kind = "GENERAL"
-    }, enabled = name.isNotBlank() && categories.none { it.id != editing?.id && it.name.equals(name.trim(), ignoreCase = true) }) { Text(if (editing == null) "Добавить категорию" else "Сохранить категорию") }
-    if (editing != null) TextButton(onClick = { editing = null; name = "" }) { Text("Отмена редактирования") }
+    Button(onClick = { save {} }, enabled = name.isNotBlank() && categories.none { it.id != editing?.id && it.name.equals(name.trim(), ignoreCase = true) }) { Text(if (editing == null) "Добавить категорию" else "Сохранить категорию") }
+    if (editing != null) TextButton(onClick = { protect { editing = null; name = ""; kind = "GENERAL" } }) { Text("Отмена редактирования") }
     Text("Удаление категории сохранит мероприятия без категории и не удалит график смен.", color = AppColors.SecondaryText, fontSize = 11.sp)
     deleting?.let { category ->
         AlertDialog(
@@ -85,14 +99,16 @@ private fun CategorySettings(categories: List<EventCategoryEntity>, onSave: (Eve
 @Composable
 internal fun ShiftSettings(date: String, pattern: ShiftPatternEntity?, shifts: List<ShiftDayEntity>, viewModel: CalendarViewModel) {
     var tab by remember { mutableStateOf(0) }
+    val drafts = LocalFormDraftRegistry.current ?: remember { FormDraftRegistry() }
+    val protect = rememberGuardedAction(drafts)
     Row {
         listOf("Шаблон", "День", "Прогноз").forEachIndexed { index, label ->
-            TextButton(onClick = { tab = index }) { Text(label, color = if (index == tab) AppColors.Accent else AppColors.SecondaryText) }
+            TextButton(onClick = { protect { tab = index } }) { Text(label, color = if (index == tab) AppColors.Accent else AppColors.SecondaryText) }
         }
     }
     when (tab) {
-        0 -> PatternEditor(date, pattern, viewModel::savePattern)
-        1 -> ShiftDayEditor(date, pattern, shifts, viewModel::saveShift, viewModel::deleteShift)
+        0 -> PatternEditor(date, pattern) { value, saved -> viewModel.savePattern(value, saved) }
+        1 -> ShiftDayEditor(date, pattern, shifts, { value, saved -> viewModel.saveShift(value, saved) }, viewModel::deleteShift)
         2 -> {
             var forecast by remember(shifts, date) { mutableStateOf<ShiftRules.Forecast?>(null) }
             var checked by remember(shifts, date) { mutableStateOf(false) }
@@ -113,7 +129,7 @@ internal fun ShiftSettings(date: String, pattern: ShiftPatternEntity?, shifts: L
 }
 
 @Composable
-private fun PatternEditor(date: String, pattern: ShiftPatternEntity?, onSave: (ShiftPatternEntity) -> Unit) {
+private fun PatternEditor(date: String, pattern: ShiftPatternEntity?, onSave: (ShiftPatternEntity, () -> Unit) -> Unit) {
     var mode by remember(pattern) { mutableStateOf(pattern?.mode ?: "WEEKDAYS") }
     var anchor by remember(pattern) { mutableStateOf(pattern?.anchorDate ?: CalendarDateUtils.startOfMonth(date)) }
     var work by remember(pattern) { mutableStateOf((pattern?.workDays ?: 5).toString()) }
@@ -122,6 +138,21 @@ private fun PatternEditor(date: String, pattern: ShiftPatternEntity?, onSave: (S
     var duration by remember(pattern) { mutableStateOf(pattern?.durationMinutes ?: 720) }
     var rate by remember(pattern) { mutableStateOf(java.math.BigDecimal.valueOf(pattern?.hourlyRateCents ?: 0, 2).toPlainString()) }
     var result by remember { mutableStateOf<String?>(null) }
+    val draft = listOf(mode, anchor, work, off, start, duration, rate)
+    val originalDraft = remember(pattern) { draft }
+    fun save(after: () -> Unit) {
+        val cents = ShiftRules.cents(rate)
+        val workCount = if (mode == "WEEKDAYS") 5 else work.toIntOrNull(); val offCount = if (mode == "WEEKDAYS") 2 else off.toIntOrNull()
+        if (cents == null || workCount == null || offCount == null || workCount !in 1..31 || offCount !in 1..31 || duration !in 15..1440) {
+            result = "Проверь ставку, длительность и число дней (1–31)."
+        } else {
+            onSave(ShiftPatternEntity(anchorDate = anchor, mode = mode, workDays = workCount, offDays = offCount, startMinute = start, durationMinutes = duration, hourlyRateCents = cents)) {
+                result = "Шаблон сохранён."; after()
+            }
+
+        }
+    }
+    RegisterFormDraft(draft != originalDraft, ::save)
     TextButton(onClick = { mode = "WEEKDAYS" }) { Text("${if (mode == "WEEKDAYS") "●" else "○"} 5/2, понедельник–пятница") }
     TextButton(onClick = { mode = "CYCLE" }) { Text("${if (mode == "CYCLE") "●" else "○"} Повторяющийся цикл, например 2/2") }
     PlanningDateField("Начало графика / первый рабочий день цикла", anchor) { anchor = it }
@@ -130,22 +161,13 @@ private fun PatternEditor(date: String, pattern: ShiftPatternEntity?, onSave: (S
         PlanningInput(off, { off = it.filter(Char::isDigit).take(2) }, "Выходных подряд")
     }
     ShiftTimeInputs(start, duration, rate, { start = it }, { duration = it }, { rate = it })
-    Button(onClick = {
-        val cents = ShiftRules.cents(rate)
-        val workCount = if (mode == "WEEKDAYS") 5 else work.toIntOrNull(); val offCount = if (mode == "WEEKDAYS") 2 else off.toIntOrNull()
-        if (cents == null || workCount == null || offCount == null || workCount !in 1..31 || offCount !in 1..31 || duration !in 15..1440) {
-            result = "Проверь ставку, длительность и число дней (1–31)."
-        } else {
-            onSave(ShiftPatternEntity(anchorDate = anchor, mode = mode, workDays = workCount, offDays = offCount, startMinute = start, durationMinutes = duration, hourlyRateCents = cents))
-            result = "Шаблон сохранён. Индивидуальные отметки дней имеют приоритет."
-        }
-    }) { Text("Сохранить график") }
-    if (pattern != null) TextButton(onClick = { onSave(pattern.copy(enabled = !pattern.enabled)) }) { Text(if (pattern.enabled) "Отключить шаблон" else "Включить шаблон") }
+    Button(onClick = { save {} }) { Text("Сохранить график") }
+    if (pattern != null) TextButton(onClick = { onSave(pattern.copy(enabled = !pattern.enabled)) {} }) { Text(if (pattern.enabled) "Отключить шаблон" else "Включить шаблон") }
     result?.let { Text(it, color = AppColors.SecondaryText) }
 }
 
 @Composable
-private fun ShiftDayEditor(initialDate: String, pattern: ShiftPatternEntity?, shifts: List<ShiftDayEntity>, onSave: (ShiftDayEntity) -> Unit, onReset: (String) -> Unit) {
+private fun ShiftDayEditor(initialDate: String, pattern: ShiftPatternEntity?, shifts: List<ShiftDayEntity>, onSave: (ShiftDayEntity, () -> Unit) -> Unit, onReset: (String) -> Unit) {
     var date by remember { mutableStateOf(initialDate) }
     val day = ShiftRules.days(date, date, pattern, shifts).firstOrNull()
     var status by remember(date, day) { mutableStateOf(day?.status ?: "WORK") }
@@ -153,17 +175,23 @@ private fun ShiftDayEditor(initialDate: String, pattern: ShiftPatternEntity?, sh
     var duration by remember(date, day) { mutableStateOf(day?.durationMinutes ?: 720) }
     var rate by remember(date, day) { mutableStateOf(java.math.BigDecimal.valueOf(day?.hourlyRateCents ?: 0, 2).toPlainString()) }
     var message by remember(date) { mutableStateOf<String?>(null) }
-    PlanningDateField("День графика", date) { date = it }
+    val draft = listOf(status, start, duration, rate)
+    val originalDraft = remember(date, day) { draft }
+    fun save(after: () -> Unit) {
+        val cents = ShiftRules.cents(rate)
+        if (cents == null || duration !in 15..1440) message = "Проверь ставку и длительность."
+        else onSave(ShiftDayEntity(date, status, start, duration, cents)) { message = "День сохранён."; after() }
+    }
+    RegisterFormDraft(draft != originalDraft, ::save)
+    val registry = LocalFormDraftRegistry.current ?: remember { FormDraftRegistry() }
+    val protect = rememberGuardedAction(registry)
+    PlanningDateField("День графика", date) { selected -> protect { date = selected } }
     listOf("WORK", "OFF", "SICK", "VACATION").forEach { value ->
         TextButton(onClick = { status = value }) { Text("${if (status == value) "●" else "○"} ${shiftStatus(value)}") }
     }
     if (day?.predicted == true) Text("Это предположение. Сохранение подтвердит выбранный день.", color = AppColors.Yellow)
     if (status == "WORK") ShiftTimeInputs(start, duration, rate, { start = it }, { duration = it }, { rate = it })
-    Button(onClick = {
-        val cents = ShiftRules.cents(rate)
-        if (cents == null || duration !in 15..1440) message = "Проверь ставку и длительность."
-        else { onSave(ShiftDayEntity(date, status, start, duration, cents)); message = "День сохранён и подтверждён." }
-    }) { Text("Сохранить день") }
+    Button(onClick = { save {} }) { Text("Сохранить день") }
     TextButton(onClick = { onReset(date); message = "Индивидуальная отметка удалена. Используется шаблон, если он включён." }) { Text("Убрать индивидуальную отметку") }
     message?.let { Text(it, color = AppColors.SecondaryText) }
 }
@@ -185,20 +213,30 @@ private fun SpecialDateSettings(date: String, values: List<SpecialDateEntity>, i
     var yearly by remember { mutableStateOf(true) }
     var url by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<SpecialDateEntity?>(null) }
+    var validation by remember { mutableStateOf(false) }
+    fun save(after: () -> Unit) {
+        if (name.isBlank()) validation = true
+        else viewModel.saveSpecialDate(SpecialDateEntity(editing?.id ?: 0, name.trim(), chosenDate, yearly, editing?.source ?: "FAMILY")) {
+            name = ""; editing = null; chosenDate = date; yearly = true; validation = false; after()
+        }
+    }
+    val draft = listOf(name, chosenDate, yearly)
+    val initial = remember(editing) { listOf(editing?.title.orEmpty(), editing?.date ?: date, editing?.yearly ?: true) }
+    RegisterFormDraft(draft != initial, ::save)
+    val registry = LocalFormDraftRegistry.current ?: remember { FormDraftRegistry() }
+    val protect = rememberGuardedAction(registry)
+    if (validation) Text("Введи название памятной даты.", color = AppColors.Red)
     Text("Семейные и памятные даты сохраняются в базе. Ежегодные повторяются без ограничения срока.", color = AppColors.SecondaryText)
     PlanningInput(name, { name = it }, "День рождения, годовщина, праздник")
     PlanningDateField("Дата", chosenDate) { chosenDate = it }
     Row { Checkbox(checked = yearly, onCheckedChange = { yearly = it }); Text("Каждый год", color = AppColors.MainText) }
-    Button(onClick = {
-        viewModel.saveSpecialDate(SpecialDateEntity(editing?.id ?: 0, name.trim(), chosenDate, yearly, editing?.source ?: "FAMILY"))
-        name = ""; editing = null
-    }, enabled = name.isNotBlank()) { Text(if (editing == null) "Добавить памятную дату" else "Сохранить дату") }
-    if (editing != null) TextButton(onClick = { editing = null; name = "" }) { Text("Отмена редактирования") }
+    Button(onClick = { save {} }, enabled = name.isNotBlank()) { Text(if (editing == null) "Добавить памятную дату" else "Сохранить дату") }
+    if (editing != null) TextButton(onClick = { protect { editing = null; name = ""; chosenDate = date; yearly = true } }) { Text("Отмена редактирования") }
     LazyColumn(Modifier.fillMaxWidth().height(220.dp)) {
       items(values, key = { it.id }) { value ->
         Text("${value.title} · ${CalendarDateUtils.formatDate(value.date)}${if (value.yearly) " · ежегодно" else ""}", color = AppColors.MainText, fontSize = 12.sp)
         Row {
-            TextButton(onClick = { editing = value; name = value.title; chosenDate = value.date; yearly = value.yearly }) { Text("Изменить") }
+            TextButton(onClick = { protect { editing = value; name = value.title; chosenDate = value.date; yearly = value.yearly } }) { Text("Изменить") }
             TextButton(onClick = { deleting = value }) { Text("Удалить", color = AppColors.Red) }
         }
     }

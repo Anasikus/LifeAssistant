@@ -23,6 +23,7 @@ import com.anasikus.lifeassistant.ui.components.TaskStatisticsDialog
 import com.anasikus.lifeassistant.viewmodel.TaskViewModel
 
 private fun taskStatusColor(task: TaskEntity): androidx.compose.ui.graphics.Color = when {
+    task.frozen -> AppColors.SecondaryText
     task.completed -> AppColors.Green
     TaskRules.isOverdue(task) -> AppColors.Red
     TaskRules.isDueSoon(task) -> AppColors.Yellow
@@ -34,15 +35,17 @@ fun TasksScreen(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
     val all by viewModel.allTasks.collectAsStateWithLifecycle()
     val today by viewModel.currentDate.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    var showFrozen by rememberSaveable { mutableStateOf(false) }
     var showArchive by rememberSaveable { mutableStateOf(false) }
     var showStatistics by remember { mutableStateOf(false) }
     var showEditor by remember { mutableStateOf(false) }
     var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
     var selectedId by remember { mutableStateOf<Int?>(null) }
     var deleting by remember { mutableStateOf<TaskEntity?>(null) }
-    val active = remember(all, today) { all.filterNot { it.archived }.sortedWith(TaskRules.comparator(today)) }
+    val active = remember(all, today) { all.filterNot { it.archived || it.frozen }.sortedWith(TaskRules.comparator(today)) }
     val archived = remember(all) { all.filter { it.archived }.sortedByDescending { it.id } }
-    val shown = if (showArchive) archived else active
+    val frozen = all.filter { it.frozen && !it.archived }
+    val shown = if (showArchive) archived else if (showFrozen) frozen else active
     val doneToday = all.count { it.completed && it.completedAt == today }
 
     MaterialTheme(colorScheme = darkColorScheme(primary = AppColors.Accent, surface = AppColors.Card,
@@ -56,23 +59,27 @@ fun TasksScreen(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
                 Text("Выполнено сегодня: $doneToday · В работе: ${active.count { !it.completed }}",
                     color = AppColors.SecondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(!showArchive, onClick = { showArchive = false }, label = { Text("Активные (${active.size})") })
-                    FilterChip(showArchive, onClick = { showArchive = true }, label = { Text("Архив (${archived.size})") })
+                    FilterChip(!showArchive && !showFrozen, onClick = { showArchive = false; showFrozen = false }, label = { Text("Активные (${active.size})") })
+                    FilterChip(showArchive, onClick = { showArchive = true; showFrozen = false }, label = { Text("Архив (${archived.size})") })
+                }
+                Row {
+                    FilterChip(showFrozen, onClick = { showFrozen = true; showArchive = false }, label = { Text("Замороженные (${frozen.size})") })
                 }
                 error?.let { Text(it, color = AppColors.Red) }
                 Text(if (showArchive) "Из архива можно восстановить или удалить задачу."
+                    else if (showFrozen) "Идеи на будущее: эти задачи не занимают время в календаре."
                     else "Просроченные → ближайшие 3 дня → остальные. Приоритет действует внутри группы. Выполненные задачи уходят в архив на следующий день.",
                     style = MaterialTheme.typography.bodySmall, color = AppColors.SecondaryText)
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (shown.isEmpty()) item {
-                        Text(if (showArchive) "Архив пока пуст" else "Задач пока нет", color = AppColors.SecondaryText)
+                        Text(if (showArchive) "Архив пока пуст" else if (showFrozen) "Замороженных задач нет" else "Задач пока нет", color = AppColors.SecondaryText)
                     }
                     items(shown, key = { it.id }) { task ->
                         Card(Modifier.fillMaxWidth().clickable { selectedId = task.id },
                             colors = CardDefaults.cardColors(containerColor = AppColors.Card)) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(task.completed, onCheckedChange = { viewModel.setCompleted(task, it) }, enabled = !task.archived)
+                                    Checkbox(task.completed, onCheckedChange = { viewModel.setCompleted(task, it) }, enabled = !task.archived && !task.frozen)
                                     Column(Modifier.weight(1f)) {
                                         Text(task.title, fontWeight = FontWeight.SemiBold)
                                         if (task.description.isNotBlank()) Text(task.description, maxLines = 1,
@@ -85,6 +92,9 @@ fun TasksScreen(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
                                     style = MaterialTheme.typography.bodySmall, color = AppColors.SecondaryText)
                                 Text(TaskRules.status(task), color = taskStatusColor(task), style = MaterialTheme.typography.labelMedium)
                                 Row {
+                                    if (!task.completed && !task.archived) TextButton(onClick = { viewModel.setFrozen(task, !task.frozen) }) {
+                                        Text(if (task.frozen) "Разморозить" else "Заморозить")
+                                    }
                                     TextButton(onClick = { viewModel.setArchived(task, !task.archived) }) {
                                         Text(if (task.archived) "Восстановить" else "В архив")
                                     }
@@ -104,7 +114,7 @@ fun TasksScreen(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
                 val existing = editingTask
                 val value = (existing ?: TaskEntity(title = title)).copy(title = title, description = description,
                     startDate = start, deadline = deadline, estimatedDurationMinutes = duration, priorityLevel = priority)
-                val onSaved: () -> Unit = { showEditor = false; if (existing == null) showArchive = false }
+                val onSaved: () -> Unit = { showEditor = false; if (existing == null) { showArchive = false; showFrozen = false } }
                 if (existing == null) viewModel.addTask(value, onSaved) else viewModel.updateTask(value, onSaved)
             })
         all.find { it.id == selectedId }?.let { task ->
@@ -117,6 +127,9 @@ fun TasksScreen(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
                     Text("Приоритет: ${TaskRules.priorityLabel(task.priorityLevel)}")
                     Text(TaskRules.status(task), color = taskStatusColor(task))
                     task.completedAt?.let { Text("Выполнено: ${TaskRules.formatDate(it)}") }
+                    if (!task.completed && !task.archived) TextButton(onClick = { viewModel.setFrozen(task, !task.frozen) { selectedId = null } }) {
+                        Text(if (task.frozen) "Разморозить задачу" else "Заморозить задачу")
+                    }
                     TextButton(onClick = { viewModel.setArchived(task, !task.archived) { selectedId = null } }) {
                         Text(if (task.archived) "Восстановить из архива" else "Перенести в архив")
                     }

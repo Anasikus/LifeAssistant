@@ -35,11 +35,20 @@ interface TaskDao {
     @Query("UPDATE calendar_task_placements SET durationMinutes = :duration, startMinute = min(startMinute, 1440 - :duration) WHERE taskId = :id")
     suspend fun updatePlacementDuration(id: Int, duration: Int)
 
+    @Query("UPDATE tasks SET frozen = :frozen WHERE id = :id")
+    suspend fun setFrozen(id: Int, frozen: Boolean)
+
+    @Transaction
+    suspend fun freeze(id: Int, frozen: Boolean, today: String) {
+        setFrozen(id, frozen)
+        if (!frozen) deletePastPlacement(id, today)
+    }
+
     @Transaction
     suspend fun editTask(value: TaskEntity) {
         val old = task(value.id) ?: return
         val completionChanged = old.completed != value.completed || old.completedAt != value.completedAt
-        updateTask(value.copy(archived = old.archived,
+        updateTask(value.copy(archived = old.archived, frozen = old.frozen,
             autoArchiveSuppressed = if (completionChanged) false else old.autoArchiveSuppressed))
         if (old.estimatedDurationMinutes != value.estimatedDurationMinutes) {
             updatePlacementDuration(value.id, value.estimatedDurationMinutes)

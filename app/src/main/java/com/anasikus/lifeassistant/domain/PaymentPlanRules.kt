@@ -1,30 +1,65 @@
 package com.anasikus.lifeassistant.domain
 
 import com.anasikus.lifeassistant.data.PaymentPlanEntity
+import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
+/** Month keys stay compatible with already paid monthly subscriptions. */
 data class PlannedPayment(val plan: PaymentPlanEntity, val date: String) {
-    val key: String get() = "${plan.id}:${date.take(7)}"
+    val key: String get() = "${plan.id}:${if (plan.repeatUnit in listOf("DAY", "WEEK")) date else date.take(7)}"
 }
 
 object PaymentPlanRules {
+    fun interval(plan: PaymentPlanEntity): Int =
+        (if (plan.repeatEvery > 0) plan.repeatEvery else plan.everyMonths).coerceIn(1, 365)
+
+    fun label(plan: PaymentPlanEntity): String {
+        val count = interval(plan)
+        return when {
+            plan.repeatUnit == "WEEK" && count == 1 -> "Каждую неделю"
+            plan.repeatUnit == "MONTH" && count == 1 -> "Каждый месяц"
+            plan.repeatUnit == "MONTH" && count == 3 -> "Каждые 3 месяца"
+            plan.repeatUnit == "YEAR" && count == 1 -> "Каждый год"
+            else -> "Повтор: $count ${when (plan.repeatUnit) { "DAY" -> "дн."; "WEEK" -> "нед."; "YEAR" -> "г."; else -> "мес." }}"
+        }
+    }
+
+    private fun field(plan: PaymentPlanEntity): Int = when (plan.repeatUnit) {
+        "DAY", "WEEK" -> Calendar.DAY_OF_MONTH
+        "YEAR" -> Calendar.YEAR
+        else -> Calendar.MONTH
+    }
+
+    private fun step(plan: PaymentPlanEntity) = interval(plan) * if (plan.repeatUnit == "WEEK") 7 else 1
+
+    fun nextHorizon(plan: PaymentPlanEntity, today: String): String {
+        val anchor = CalendarDateUtils.parseCalendar(maxOf(plan.startDate, today))
+        anchor.add(field(plan), step(plan) + if (plan.repeatUnit == "YEAR") 1 else 2)
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(anchor.time)
+    }
+
     fun between(plan: PaymentPlanEntity, start: String, end: String): List<PlannedPayment> {
         if (start > end || end < plan.startDate) return emptyList()
-        val interval = plan.everyMonths.coerceAtLeast(1)
         val anchor = CalendarDateUtils.parseCalendar(plan.startDate)
         val first = CalendarDateUtils.parseCalendar(maxOf(start, plan.startDate))
-        val elapsed = (first.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)) * 12 +
-            first.get(Calendar.MONTH) - anchor.get(Calendar.MONTH)
-        var offset = elapsed / interval * interval
+        val field = field(plan)
+        val step = step(plan)
+        val elapsed = when (field) {
+            Calendar.DAY_OF_MONTH -> CalendarDateUtils.daysBetween(plan.startDate, maxOf(start, plan.startDate)).toInt()
+            Calendar.YEAR -> first.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)
+            else -> (first.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)) * 12 + first.get(Calendar.MONTH) - anchor.get(Calendar.MONTH)
+        }
+        var offset = elapsed / step * step
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         return buildList {
             while (true) {
-                val date = (anchor.clone() as Calendar).apply { add(Calendar.MONTH, offset) }
-                val iso = String.format(Locale.US, "%04d-%02d-%02d",
-                    date.get(Calendar.YEAR), date.get(Calendar.MONTH) + 1, date.get(Calendar.DAY_OF_MONTH))
-                if (iso > end) break
-                if (iso >= start) add(PlannedPayment(plan, iso))
-                offset += interval
+                // Always calculate from the anchor: Jan 31 → Feb 28 → Mar 31, not Mar 28.
+                val current = (anchor.clone() as Calendar).apply { add(field, offset) }
+                val date = format.format(current.time)
+                if (date > end) break
+                if (date >= start) add(PlannedPayment(plan, date))
+                offset += step
             }
         }
     }

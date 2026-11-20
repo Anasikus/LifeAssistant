@@ -18,6 +18,7 @@ import com.anasikus.lifeassistant.data.FinanceTransactionEntity
 import com.anasikus.lifeassistant.data.PaymentPlanEntity
 import com.anasikus.lifeassistant.domain.CalendarDateUtils
 import com.anasikus.lifeassistant.domain.PaymentPlanRules
+import com.anasikus.lifeassistant.domain.PaymentReminderRules
 import com.anasikus.lifeassistant.domain.ShiftRules
 import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
@@ -56,19 +57,23 @@ object PaymentReminders {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (!manager.areNotificationsEnabled()) return
         val prefs = context.getSharedPreferences("payment_reminders", Context.MODE_PRIVATE)
-        val paid = transactions.filter { !it.transfer && !it.income }.mapNotNull { it.planKey }.toSet()
+        val paid = transactions.filter { !it.transfer && !it.income && it.date <= CalendarDateUtils.today() }.mapNotNull { it.planKey }.toSet()
         val today = CalendarDateUtils.today()
         val now = System.currentTimeMillis()
         var next: Long? = null
         for (plan in plans) {
-            val horizon = CalendarDateUtils.addMonths(maxOf(today, plan.startDate), plan.everyMonths + 2)
-            val notifiedDate = prefs.getString("plan_${plan.id}", "").orEmpty()
+            val horizon = PaymentPlanRules.nextHorizon(plan, today)
             for (payment in PaymentPlanRules.between(plan, today, horizon)) {
-                if (payment.key in paid || payment.date <= notifiedDate) continue
-                val reminderDate = CalendarDateUtils.addDays(payment.date, -plan.reminderDays)
-                val at = CalendarDateUtils.parseCalendar(reminderDate).apply {
-                    set(Calendar.HOUR_OF_DAY, 9)
-                }.timeInMillis
+                if (payment.key in paid) continue
+                val first = CalendarDateUtils.addDays(payment.date, -plan.reminderDays)
+                val latest = PaymentReminderRules.latestDate(plan, payment.date, today) ?: first
+                val stampKey = "sent:${payment.key}"
+                val sent = prefs.getString(stampKey, "").orEmpty()
+                // Honour the old one-shot marker when upgrading.
+                if (sent.isEmpty() && plan.reminderRepeatDays == 0 &&
+                    payment.date <= prefs.getString("plan_${plan.id}", "").orEmpty()) continue
+                val reminderDate = if (sent >= latest) PaymentReminderRules.nextDate(plan, payment.date, sent) ?: continue else latest
+                val at = PaymentReminderRules.at(plan, reminderDate)
                 if (deliver && at <= now) {
                     if (Build.VERSION.SDK_INT >= 26) {
                         manager.createNotificationChannel(
@@ -89,11 +94,14 @@ object PaymentReminders {
                         .setContentIntent(openApp)
                         .setAutoCancel(true)
                         .build())
-                    prefs.edit().putString("plan_${plan.id}", payment.date).apply()
+                    prefs.edit().putString(stampKey, reminderDate).apply()
+                    PaymentReminderRules.nextDate(plan, payment.date, reminderDate)?.let { date ->
+                        val trigger = maxOf(PaymentReminderRules.at(plan, date), now + 1_000L)
+                        next = minOf(next ?: trigger, trigger)
+                    }
                 } else {
                     val trigger = maxOf(at, now + 1_000L)
                     next = minOf(next ?: trigger, trigger)
-                    break
                 }
             }
         }

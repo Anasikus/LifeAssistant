@@ -12,9 +12,11 @@ data class FinanceTotals(
     val earned: Long,
     val income: Long,
     val expense: Long,
-    val openingCash: Long = 0
+    val openingCash: Long = 0,
+    val reserved: Long = 0
 ) {
     val cash: Long get() = openingCash + income - expense
+    val available: Long get() = cash - reserved
 }
 
 object FinanceRules {
@@ -95,7 +97,8 @@ object FinanceRules {
         val (previous, current) = throughCutoff.partition { it.date < monthStart }
         return totals(sources, current).copy(
             earned = sources.sumOf { outstanding(it, throughCutoff) },
-            openingCash = previous.filterNot { it.transfer }.sumOf { if (it.income) it.amountCents else -it.amountCents }
+            openingCash = previous.filterNot { it.transfer }.sumOf { if (it.income) it.amountCents else -it.amountCents },
+            reserved = payments.filter { !it.income && !it.transfer && it.date > cutoffDate }.sumOf { it.amountCents }
         )
     }
 

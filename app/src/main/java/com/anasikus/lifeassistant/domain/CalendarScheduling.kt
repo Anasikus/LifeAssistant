@@ -188,7 +188,7 @@ object CalendarTaskScheduler {
         }
 
         val pendingTasks = tasks
-            .filterNot { it.completed || it.archived }
+            .filterNot { it.completed || it.archived || it.frozen }
             .sortedWith(TaskRules.comparator(today))
 
         // Сначала резервируем ВСЕ ручные слоты: автоматическая задача более

@@ -38,6 +38,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.anasikus.lifeassistant.ui.components.rememberDismissGuard
+import com.anasikus.lifeassistant.ui.components.LocalFormSwitch
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.Composable
 import com.anasikus.lifeassistant.domain.TaskRules
@@ -113,6 +115,7 @@ fun CalendarScreen(
     val placements by viewModel.placements.collectAsState()
     val tasks by taskViewModel.tasks.collectAsStateWithLifecycle()
     val taskError by taskViewModel.error.collectAsState()
+    val eventError by viewModel.financeError.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val shiftPattern by viewModel.shiftPattern.collectAsState()
     val shiftDays by viewModel.shiftDays.collectAsState()
@@ -422,7 +425,7 @@ fun CalendarScreen(
                 val placedIds = scheduledTasks.map { it.task.id }.toSet()
                 val unplaced = tasks.count { task ->
                     val saved = placements.find { it.taskId == task.id }
-                    !task.completed && !task.archived && task.id !in placedIds &&
+                    !task.completed && !task.archived && !task.frozen && task.id !in placedIds &&
                         (task.startDate.isBlank() || task.startDate <= anchorDate) &&
                         (saved == null || (saved.hidden && saved.date != anchorDate))
                 }
@@ -519,7 +522,7 @@ fun CalendarScreen(
             it.eventId == currentEvent?.id && it.occurrenceDate == eventOccurrenceDate
         }
         CalendarEventDialog(
-            event = currentEvent,
+            event = currentEvent, error = eventError,
             initialPayMode = editedOverride?.payMode ?: currentEvent?.payMode,
             initialPayAmount = editedOverride?.payAmountCents ?: currentEvent?.payAmountCents,
             creationHeader = if (currentEvent == null) ({ CalendarCreationTabs(false) { createTask = it } }) else null,
@@ -545,7 +548,7 @@ fun CalendarScreen(
                             payMode = if (kind == "WORK") payMode.name else null,
                             payAmountCents = if (kind == "WORK") amountCents else null
                         )
-                    )
+                    ) { showEventDialog = false }
                 } else {
                     val replaceBaseSchedule = currentEvent.repeatDaysMask == 0 || repeatDaysMask == 0
                     val editBasePay = replaceBaseSchedule || currentEvent.categoryId != categoryId
@@ -577,9 +580,8 @@ fun CalendarScreen(
                             payMode = if (customPay) payMode.name else null,
                             payAmountCents = if (customPay) amountCents else null
                         )
-                    )
+                    ) { showEventDialog = false }
                 }
-                showEventDialog = false
             },
             onDeleteOccurrence = {
                 if (currentEvent != null) {
@@ -697,11 +699,16 @@ fun CalendarScreen(
 
 @Composable
 private fun CalendarCreationTabs(task: Boolean, onSelect: (Boolean) -> Unit) {
+    val protect = LocalFormSwitch.current
+    fun select(value: Boolean) {
+        if (value == task) return
+        if (protect == null) onSelect(value) else protect { onSelect(value) }
+    }
     Row {
-        TextButton(onClick = { onSelect(false) }) {
+        TextButton(onClick = { select(false) }) {
             Text("Мероприятие", color = if (task) AppColors.SecondaryText else AppColors.Accent)
         }
-        TextButton(onClick = { onSelect(true) }) {
+        TextButton(onClick = { select(true) }) {
             Text("Задача", color = if (task) AppColors.Accent else AppColors.SecondaryText)
         }
     }
@@ -758,8 +765,26 @@ private fun TaskTimeEditDialog(
         endMinute = startMinute + duration
     }
 
+    val draft = listOf(startMinute, endMinute, durationHoursText, durationMinutesText)
+    val originalDraft = remember { draft }
+    fun save() {
+                val duration = currentDuration()
+                when {
+                    duration == null -> validationError = "Введи часы и минуты числами."
+                    startMinute < 0 || startMinute >= 24 * 60 ->
+                        validationError = "Начало должно быть в диапазоне 00:00–23:59."
+                    duration < 15 -> validationError = "Минимальная длительность — 15 минут."
+                    startMinute + duration != endMinute ->
+                        validationError = "Проверь окончание и длительность."
+                    endMinute > 24 * 60 -> validationError = "Задача должна завершаться не позднее 24:00."
+                    else -> onSave(startMinute, duration)
+                }
+
+    }
+    val dismiss = rememberDismissGuard(draft != originalDraft, ::save, onDismiss)
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         containerColor = AppColors.Card,
         title = { Text("Время задачи", color = Color.White) },
         text = {
@@ -830,22 +855,10 @@ private fun TaskTimeEditDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val duration = currentDuration()
-                when {
-                    duration == null -> validationError = "Введи часы и минуты числами."
-                    startMinute < 0 || startMinute >= 24 * 60 ->
-                        validationError = "Начало должно быть в диапазоне 00:00–23:59."
-                    duration < 15 -> validationError = "Минимальная длительность — 15 минут."
-                    startMinute + duration != endMinute ->
-                        validationError = "Проверь окончание и длительность."
-                    endMinute > 24 * 60 -> validationError = "Задача должна завершаться не позднее 24:00."
-                    else -> onSave(startMinute, duration)
-                }
-            }) { Text("Сохранить", color = AppColors.Accent) }
+            TextButton(onClick = ::save) { Text("Сохранить", color = AppColors.Accent) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена", color = AppColors.SecondaryText) }
+            TextButton(onClick = dismiss) { Text("Отмена", color = AppColors.SecondaryText) }
         }
     )
 }

@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
 fun FinanceStatisticsDialog(
     transactions: List<FinanceTransactionEntity>, categories: List<ExpenseCategoryEntity>, month: String, cutoff: String,
     events: List<CalendarEventEntity>, overrides: List<CalendarEventOverrideEntity>, pattern: ShiftPatternEntity?,
-    days: List<ShiftDayEntity>, minute: Int, onDismiss: () -> Unit
+    days: List<ShiftDayEntity>, minute: Int, incomeCategories: List<IncomeCategoryEntity> = emptyList(), onDismiss: () -> Unit
 ) {
     val periods = listOf("Неделя" to 0, "Месяц" to 1, "3 месяца" to 3, "Полгода" to 6, "Год" to 12)
     var months by remember { mutableStateOf(1) }
@@ -33,9 +33,10 @@ fun FinanceStatisticsDialog(
     val expenseCategories = remember(transactions, categories, start, cutoff) {
         FinanceStatistics.expenseCategories(transactions, categories, start, cutoff)
     }
-    val incomeSources = remember(transactions, start, cutoff) {
+    val incomeSources = remember(transactions, incomeCategories, start, cutoff) {
         transactions.filter { !it.transfer && it.income && it.date in start..cutoff }
-            .groupBy { it.sourceName ?: "Прочий доход" }
+            .groupBy { row -> incomeCategories.find { it.id == row.incomeCategoryId }?.name
+                ?: row.sourceName?.takeIf { row.sourceKey?.startsWith("income:") != true } ?: "Без категории" }
             .map { (name, rows) -> name to rows.sumOf { it.amountCents } }.sortedByDescending { it.second }
     }
     val dates = remember(start, cutoff) {
@@ -107,7 +108,7 @@ fun FinanceStatisticsDialog(
                     Text("На что ушли деньги", style = MaterialTheme.typography.titleMedium)
                     ExpenseDonutChart(expenseCategories)
                     HorizontalDivider()
-                    Text("Доходы по источникам", style = MaterialTheme.typography.titleMedium)
+                    Text("Доходы по категориям", style = MaterialTheme.typography.titleMedium)
                     if (incomeSources.isEmpty()) Text("Доходов за этот период нет", color = AppColors.SecondaryText)
                     incomeSources.forEach { (name, amount) ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {

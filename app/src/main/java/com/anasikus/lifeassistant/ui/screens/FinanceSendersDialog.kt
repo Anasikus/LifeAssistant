@@ -12,6 +12,7 @@ import com.anasikus.lifeassistant.data.FinanceImportRuleEntity
 import com.anasikus.lifeassistant.data.FinanceInboxEntity
 import com.anasikus.lifeassistant.domain.FinanceMessageParser
 import com.anasikus.lifeassistant.ui.AppColors
+import com.anasikus.lifeassistant.ui.components.rememberDismissGuard
 
 private data class InboxSender(val source: String, val sender: String, val count: Int)
 
@@ -36,7 +37,12 @@ internal fun FinanceSendersDialog(
             .sortedWith(compareByDescending<InboxSender> { it.count }.thenBy { it.sender })
     }
     val profiles = remember(rules) { rules.associateBy { it.key } }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Отправители") }, text = {
+    var validation by remember { mutableStateOf(false) }
+    val dismiss = rememberDismissGuard(packageName.isNotBlank(), {
+        if (packageName.matches(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+"))) { onBlock("APP", packageName); packageName = ""; onDismiss() }
+        else validation = true
+    }, onDismiss)
+    AlertDialog(onDismissRequest = dismiss, title = { Text("Отправители") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Блокировка приложения действует на все его уведомления, независимо от текста. Неучтённые сообщения удалятся, учтённые доходы и расходы сохранятся.")
             OutlinedTextField(packageName, { packageName = it.trim() }, singleLine = true,
@@ -44,6 +50,7 @@ internal fun FinanceSendersDialog(
                 placeholder = { Text("com.xiaomi.hm.health") })
             TextButton(enabled = packageName.matches(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")),
                 onClick = { onBlock("APP", packageName); packageName = "" }) { Text("Заблокировать приложение") }
+            if (validation) Text("Проверь имя пакета приложения.", color = AppColors.Red)
             error?.let { Text(it, color = AppColors.Red) }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (groups.isEmpty()) item { Text("Отправителей пока нет") }
@@ -63,5 +70,5 @@ internal fun FinanceSendersDialog(
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Готово") } })
+    }, confirmButton = { TextButton(onClick = dismiss) { Text("Готово") } })
 }

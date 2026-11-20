@@ -61,6 +61,9 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     fun setArchived(task: TaskEntity, archived: Boolean, onSaved: () -> Unit = {}) =
         change({ repository.setArchived(task, archived, TaskRules.today()) }, onSaved)
 
+    fun setFrozen(task: TaskEntity, frozen: Boolean, onSaved: () -> Unit = {}) =
+        change({ repository.setFrozen(task.id, frozen, TaskRules.today()) }, onSaved)
+
     fun setCompleted(task: TaskEntity, completed: Boolean) {
         updateTask(task.copy(completed = completed, completedAt = if (completed) TaskRules.today() else null,
             autoArchiveSuppressed = false))

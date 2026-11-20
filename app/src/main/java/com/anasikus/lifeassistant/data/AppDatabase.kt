@@ -21,10 +21,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FinanceTransactionEntity::class,
         ExpenseCategoryEntity::class,
         PaymentPlanEntity::class,
+        IncomeCategoryEntity::class,
         FinanceInboxEntity::class,
         FinanceImportRuleEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -227,6 +228,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE tasks ADD COLUMN frozen INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE payment_plans ADD COLUMN repeatUnit TEXT NOT NULL DEFAULT 'MONTH'")
+                database.execSQL("ALTER TABLE payment_plans ADD COLUMN repeatEvery INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE payment_plans ADD COLUMN reminderMinute INTEGER NOT NULL DEFAULT 540")
+                database.execSQL("ALTER TABLE payment_plans ADD COLUMN reminderRepeatDays INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("CREATE TABLE IF NOT EXISTS income_categories (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL)")
+                database.execSQL("ALTER TABLE finance_transactions ADD COLUMN incomeCategoryId INTEGER")
+                database.execSQL("INSERT INTO income_categories(name) SELECT DISTINCT sourceName FROM finance_transactions WHERE income = 1 AND transfer = 0 AND sourceKey LIKE 'income:%' AND sourceName IS NOT NULL AND sourceName != ''")
+                database.execSQL("UPDATE finance_transactions SET incomeCategoryId = (SELECT id FROM income_categories WHERE name = finance_transactions.sourceName LIMIT 1) WHERE income = 1 AND sourceKey LIKE 'income:%'")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -260,7 +275,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
-                        MIGRATION_11_12
+                        MIGRATION_11_12,
+                        MIGRATION_12_13
                         )
                     .build()
                     .also {

@@ -43,6 +43,9 @@ import com.anasikus.lifeassistant.ui.AppColors
 import com.anasikus.lifeassistant.ui.components.ExpenseCategoryPicker
 import com.anasikus.lifeassistant.ui.components.ExpenseCategoriesDialog
 import com.anasikus.lifeassistant.ui.components.PlanningDateField
+import com.anasikus.lifeassistant.ui.components.rememberDismissGuard
+import com.anasikus.lifeassistant.ui.components.ChoiceField
+import com.anasikus.lifeassistant.data.IncomeCategoryEntity
 import com.anasikus.lifeassistant.viewmodel.CalendarViewModel
 import kotlinx.coroutines.launch
 
@@ -52,6 +55,7 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
     val messages by viewModel.inboxMessages.collectAsStateWithLifecycle()
     val rules by viewModel.importRules.collectAsStateWithLifecycle()
     val categories by viewModel.expenseCategories.collectAsStateWithLifecycle()
+    val incomeCategories by viewModel.incomeCategories.collectAsStateWithLifecycle()
     val error by viewModel.inboxError.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<FinanceInboxEntity?>(null) }
     var deleting by remember { mutableStateOf<FinanceInboxEntity?>(null) }
@@ -135,7 +139,7 @@ fun FinanceInboxScreen(viewModel: CalendarViewModel, sources: List<FinanceSource
             }
         }
         selected?.let { message ->
-            ReviewMessageDialog(message, rules.find { it.key == message.ruleKey }, categories, sources, error,
+            ReviewMessageDialog(message, rules.find { it.key == message.ruleKey }, categories, sources, error, incomeCategories,
                 onKeep = { title, body -> viewModel.keepInbox(message.id, title, body) { selected = null; filter = "SAVED" } },
                 onDismiss = { selected = null }) { title, body, income, amount, date, category, source, learn, textFilter, transfer ->
                 viewModel.confirmInbox(message.id, title, body, income, amount, date, category, source?.key, source?.name, learn, textFilter, transfer) { selected = null; filter = "POSTED" }
@@ -195,6 +199,7 @@ private fun ReviewMessageDialog(
     categories: List<ExpenseCategoryEntity>,
     sources: List<FinanceSource>,
     error: String?,
+    incomeCategories: List<IncomeCategoryEntity>,
     onKeep: (String, String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: (String, String, Boolean, Long, String, Int?, FinanceSource?, Boolean, String?, Boolean) -> Unit
@@ -218,8 +223,18 @@ private fun ReviewMessageDialog(
     var customIncome by remember(message.id) { mutableStateOf(if (message.incomeSourceKey?.startsWith("income:") == true) message.incomeSourceName.orEmpty() else "") }
     val filterValid = textFilter.isBlank() || FinanceMessageParser.matchesFilter(textFilter, title, body)
     val cents = ShiftRules.cents(amount)
+    val draft = listOf(title, body, income, transfer, amount, date, category, source, learn, textFilter, customIncome)
+    val initial = remember(message.id) { draft }
+    var validation by remember { mutableStateOf(false) }
+    fun save() {
+        if ((income == null && !transfer) || cents == null || cents <= 0 || date > CalendarDateUtils.today() || !filterValid) validation = true
+        else onConfirm(title, body, if (transfer) false else checkNotNull(income), cents, date, category,
+            if (customIncome.isNotBlank()) FinanceSource("income:" + FinanceMessageParser.hash(customIncome.trim().lowercase(java.util.Locale.ROOT)), customIncome.trim(), 0L) else source,
+            learn, textFilter.takeIf { it.isNotBlank() }, transfer)
+    }
+    val dismiss = rememberDismissGuard(draft != initial, ::save, onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         title = { Text(if (step == 0) "Проверка операции" else "Категория и обучение") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -253,6 +268,10 @@ private fun ReviewMessageDialog(
                             }
                         }
                     }
+                    if (!transfer && income == true && incomeCategories.isNotEmpty()) ChoiceField("Категория дохода", customIncome.ifBlank { "Выбрать категорию" },
+                        listOf("" to "Без категории") + incomeCategories.map { it.name to it.name }) {
+                        customIncome = it; source = null
+                    }
                     if (!transfer && income == true) OutlinedTextField(customIncome, {
                         customIncome = it
                         if (it.isNotBlank()) source = null
@@ -271,17 +290,16 @@ private fun ReviewMessageDialog(
                     }
                     Text("Похожий источник и шаблон будут получать выбранные тип и категорию. Если сумму нельзя однозначно прочитать, сообщение снова придёт на проверку.", color = AppColors.SecondaryText)
                 }
+                if (validation) Text("Проверь направление, сумму, дату и текст правила.", color = AppColors.Red)
                 error?.let { Text(it, color = AppColors.Red) }
             }
         },
         confirmButton = {
             TextButton(enabled = (income != null || transfer) && cents != null && cents > 0 && date <= CalendarDateUtils.today() && filterValid, onClick = {
-                if (step == 0) step = 1 else onConfirm(title, body, if (transfer) false else checkNotNull(income), checkNotNull(cents), date, category,
-                    if (customIncome.isNotBlank()) FinanceSource("income:" + FinanceMessageParser.hash(customIncome.trim().lowercase(java.util.Locale.ROOT)), customIncome.trim(), 0L) else source,
-                    learn, textFilter.takeIf { it.isNotBlank() }, transfer)
+                if (step == 0) step = 1 else save()
             }) { Text(if (step == 0) "Да, всё верно" else "Сохранить") }
         },
-        dismissButton = { TextButton(onClick = { if (step > 0) step = 0 else onDismiss() }) { Text(if (step > 0) "Назад" else "Отмена") } }
+        dismissButton = { TextButton(onClick = { if (step > 0) step = 0 else dismiss() }) { Text(if (step > 0) "Назад" else "Отмена") } }
     )
 }
 
@@ -390,8 +408,22 @@ private fun PasteMessageDialog(onDismiss: () -> Unit) {
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    fun save() {
+        if (body.isBlank()) { error = true; return }
+                scope.launch {
+                    try {
+                        val at = System.currentTimeMillis()
+                        FinanceMessageCapture.receive(context.applicationContext, "MANUAL", sender.ifBlank { "Вставленный текст" }, title, body, at, "manual:$at:${FinanceMessageParser.hash(body)}")
+                        onDismiss()
+                    } catch (failure: Exception) {
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
+                        error = true
+                    }
+                }
+    }
+    val dismiss = rememberDismissGuard(sender.isNotBlank() || title.isNotBlank() || body.isNotBlank(), ::save, onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         title = { Text("Импорт текста сообщения") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -403,20 +435,10 @@ private fun PasteMessageDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(enabled = body.isNotBlank(), onClick = {
-                scope.launch {
-                    try {
-                        val at = System.currentTimeMillis()
-                        FinanceMessageCapture.receive(context.applicationContext, "MANUAL", sender.ifBlank { "Вставленный текст" }, title, body, at, "manual:$at:${FinanceMessageParser.hash(body)}")
-                        onDismiss()
-                    } catch (failure: Exception) {
-                        if (failure is kotlinx.coroutines.CancellationException) throw failure
-                        error = true
-                    }
-                }
-            }) { Text("В обработку") }
+            TextButton(enabled = body.isNotBlank(), onClick = ::save) { Text("В обработку") }
+
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+        dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } }
     )
 }
 
@@ -452,7 +474,9 @@ private fun SenderSettingsDialog(
 ) {
     var bank by remember(source, sender) { mutableStateOf(rule?.bankName.orEmpty()) }
     var financial by remember(source, sender) { mutableStateOf(rule?.action != "BLOCK_SENDER") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Отправитель") }, text = {
+    val dismiss = rememberDismissGuard(bank != rule?.bankName.orEmpty() || financial != (rule?.action != "BLOCK_SENDER"),
+        { onSave(bank, financial) }, onDismiss)
+    AlertDialog(onDismissRequest = dismiss, title = { Text("Отправитель") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${sourceLabel(source)} · $sender")
             OutlinedTextField(bank, { bank = it }, label = { Text("Банк или организация") }, singleLine = true)
@@ -462,5 +486,5 @@ private fun SenderSettingsDialog(
             error?.let { Text(it, color = AppColors.Red) }
         }
     }, confirmButton = { TextButton(onClick = { onSave(bank, financial) }) { Text("Сохранить") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } })
+        dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } })
 }

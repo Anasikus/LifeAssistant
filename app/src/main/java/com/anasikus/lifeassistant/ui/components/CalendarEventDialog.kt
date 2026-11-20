@@ -20,6 +20,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +73,8 @@ fun CalendarEventDialog(
     editSeries: Boolean = false,
     creationHeader: (@Composable () -> Unit)? = null,
     initialPayMode: String? = event?.payMode,
-    initialPayAmount: Long? = event?.payAmountCents
+    initialPayAmount: Long? = event?.payAmountCents,
+    error: String? = null
 ) {
     val context = LocalContext.current
 
@@ -111,13 +114,44 @@ fun CalendarEventDialog(
         errorLabelColor = AppColors.Red
     )
 
+    val draft = listOf(title, description, date, startMinute, durationMinutes, repeatDaysMask, categoryId, payMode, amount)
+    val originalDraft = remember { draft }
+    fun save() {
+                    if (title.isBlank()) {
+                        titleError = true
+                    } else if (durationMinutes !in 15..1440) {
+                        timeError = "Выбери длительность от 15 минут до 24 часов."
+                    } else if (requireCategory && selectedCategory == null) {
+                        timeError = "Выбери категорию работы или подработки."
+                    } else if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB") && ShiftRules.cents(amount) == null) {
+                        timeError = "Введи неотрицательную сумму с точностью до копеек."
+                    } else {
+                        onSave(
+                            title.trim(),
+                            description.trim(),
+                            date,
+                            startMinute,
+                            durationMinutes,
+                            repeatDaysMask,
+                            categoryId,
+                            if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) ShiftRules.cents(amount) else null,
+                            payMode
+                        )
+                    }
+
+    }
+    val dismiss = rememberDismissGuard(draft != originalDraft, ::save, onDismiss)
+    val switchDrafts = remember { FormDraftRegistry() }
+    SideEffect { switchDrafts.dirty = draft != originalDraft; switchDrafts.save = { save() } }
+    val switchForm = rememberGuardedAction(switchDrafts)
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         containerColor = AppColors.Card,
         titleContentColor = AppColors.MainText,
         textContentColor = AppColors.SecondaryText,
         title = {
-            if (creationHeader != null) creationHeader() else Text(
+            if (creationHeader != null) CompositionLocalProvider(LocalFormSwitch provides switchForm) { creationHeader() } else Text(
                 text = if (event == null) "Новое мероприятие" else "Редактирование мероприятия",
                 fontWeight = FontWeight.Bold
             )
@@ -139,6 +173,7 @@ fun CalendarEventDialog(
                     isError = titleError,
                     colors = fieldColors
                 )
+                error?.let { Text(it, color = AppColors.Red) }
                 if (titleError) {
                     Text("Введите название мероприятия.", color = AppColors.Red, fontSize = 12.sp)
                 }
@@ -355,29 +390,7 @@ fun CalendarEventDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = {
-                    if (title.isBlank()) {
-                        titleError = true
-                    } else if (durationMinutes !in 15..1440) {
-                        timeError = "Выбери длительность от 15 минут до 24 часов."
-                    } else if (requireCategory && selectedCategory == null) {
-                        timeError = "Выбери категорию работы или подработки."
-                    } else if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB") && ShiftRules.cents(amount) == null) {
-                        timeError = "Введи неотрицательную сумму с точностью до копеек."
-                    } else {
-                        onSave(
-                            title.trim(),
-                            description.trim(),
-                            date,
-                            startMinute,
-                            durationMinutes,
-                            repeatDaysMask,
-                            categoryId,
-                            if (selectedCategory?.kind in listOf("WORK", "SIDE_JOB")) ShiftRules.cents(amount) else null,
-                            payMode
-                        )
-                    }
-                }
+                onClick = ::save
             ) {
                 Text("Сохранить", color = AppColors.Accent)
             }
@@ -389,7 +402,7 @@ fun CalendarEventDialog(
                         Text("Удалить", color = AppColors.Red)
                     }
                 }
-                TextButton(onClick = onDismiss) {
+                TextButton(onClick = dismiss) {
                     Text("Отмена", color = AppColors.SecondaryText)
                 }
             }

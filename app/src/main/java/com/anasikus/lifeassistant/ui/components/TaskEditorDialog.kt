@@ -19,6 +19,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -144,13 +146,47 @@ fun TaskEditorDialog(
         errorLabelColor = AppColors.Red
     )
 
+    val draft = listOf(title, description, startDate, deadline, hours, minutes, priority)
+    val originalDraft = remember { draft }
+    fun save() {
+                    when {
+                        title.isBlank() -> {
+                            titleError = true
+                        }
+
+                        deadline < startDate -> {
+                            dateError = true
+                        }
+
+                        duration == null || duration !in 15..1440 -> {
+                            durationError = true
+                        }
+
+                        else -> {
+                            onSave(
+                                title.trim(),
+                                description.trim(),
+                                startDate,
+                                deadline,
+                                checkNotNull(duration),
+                                priority
+                            )
+                        }
+                    }
+
+    }
+    val dismiss = rememberDismissGuard(draft != originalDraft, ::save, onDismiss)
+    val switchDrafts = remember { FormDraftRegistry() }
+    SideEffect { switchDrafts.dirty = draft != originalDraft; switchDrafts.save = { save() } }
+    val switchForm = rememberGuardedAction(switchDrafts)
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismiss,
         containerColor = AppColors.Card,
         titleContentColor = AppColors.MainText,
         textContentColor = AppColors.SecondaryText,
         title = {
-            if (creationHeader != null) creationHeader() else Text(
+            if (creationHeader != null) CompositionLocalProvider(LocalFormSwitch provides switchForm) { creationHeader() } else Text(
                 text = if (task == null) {
                     "Новая задача"
                 } else {
@@ -276,38 +312,13 @@ fun TaskEditorDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = {
-                    when {
-                        title.isBlank() -> {
-                            titleError = true
-                        }
-
-                        deadline < startDate -> {
-                            dateError = true
-                        }
-
-                        duration == null || duration !in 15..1440 -> {
-                            durationError = true
-                        }
-
-                        else -> {
-                            onSave(
-                                title.trim(),
-                                description.trim(),
-                                startDate,
-                                deadline,
-                                checkNotNull(duration),
-                                priority
-                            )
-                        }
-                    }
-                }
+                onClick = ::save
             ) {
                 Text("Сохранить", color = AppColors.Accent)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = dismiss) {
                 Text("Отмена", color = AppColors.SecondaryText)
             }
         }

@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 class TaskRepository(
     private val taskDao: TaskDao
 ) {
+    suspend fun setFrozen(id: Int, frozen: Boolean, today: String) = taskDao.freeze(id, frozen, today)
+
     val allTasks: Flow<List<TaskEntity>> =
         taskDao.getAllTasks()
 

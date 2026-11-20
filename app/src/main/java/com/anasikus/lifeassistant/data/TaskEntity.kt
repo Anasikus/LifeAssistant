@@ -16,5 +16,6 @@ data class TaskEntity(
     @ColumnInfo(defaultValue = "60") val estimatedDurationMinutes: Int = 60,
     @ColumnInfo(defaultValue = "1") val priorityLevel: Int = 1,
     @ColumnInfo(defaultValue = "0") val archived: Boolean = false,
-    @ColumnInfo(defaultValue = "0") val autoArchiveSuppressed: Boolean = false
+    @ColumnInfo(defaultValue = "0") val autoArchiveSuppressed: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val frozen: Boolean = false
 )

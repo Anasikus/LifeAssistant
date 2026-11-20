@@ -164,6 +164,12 @@ interface FinanceInboxDao {
         return if (learned?.action == "KEEP") "SAVED" else "PENDING"
     }
 
+    @Query("SELECT id FROM income_categories WHERE name = :name LIMIT 1")
+    suspend fun incomeCategoryByName(name: String): Int?
+
+    @Insert
+    suspend fun insertIncomeCategory(value: IncomeCategoryEntity)
+
     @Transaction
     suspend fun confirm(
         id: Long,
@@ -197,6 +203,12 @@ interface FinanceInboxDao {
         }
         val existing = transactionForMessage(id)
         val category = categoryId?.takeIf { categoryExists(it) == 1 }
+        val incomeCategoryId = if (isIncome && sourceKey?.startsWith("income:") == true && !sourceName.isNullOrBlank()) {
+            incomeCategoryByName(sourceName) ?: run {
+                insertIncomeCategory(IncomeCategoryEntity(name = sourceName))
+                incomeCategoryByName(sourceName)
+            }
+        } else existing?.incomeCategoryId?.takeIf { isIncome && existing.sourceKey == sourceKey }
         val entry = FinanceTransactionEntity(
             id = existing?.id ?: 0,
             date = date,
@@ -206,7 +218,7 @@ interface FinanceInboxDao {
             sourceKey = if (isIncome) sourceKey else null,
             sourceName = if (isIncome) sourceName else null,
             expenseCategoryId = if (isIncome || transfer) null else category,
-            inboxMessageId = id
+            inboxMessageId = id, incomeCategoryId = incomeCategoryId
         )
         if (existing == null) insertTransaction(entry) else updateTransaction(entry)
         updateMessage(old.copy(
